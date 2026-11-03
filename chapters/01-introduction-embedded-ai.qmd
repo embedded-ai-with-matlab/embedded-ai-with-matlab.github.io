@@ -1,205 +1,293 @@
 # Introduction to Embedded AI with MATLAB
 
-::: {.callout-note title="Chapter question"}
-How do we turn a MATLAB model that performs well on recorded sensor data into an embedded AI application that can reliably process real measurements on a microcontroller?
+::: {.callout-note title="Guiding question"}
+How can a model developed and evaluated in MATLAB become a reliable AI application that runs on an embedded device with limited memory, computation, and energy?
 :::
 
 ## Learning objectives
 
 After completing this chapter, you should be able to:
 
-1. explain the difference between training in MATLAB and performing inference on an embedded target;
-2. sketch the end-to-end MATLAB workflow from sensor measurements to on-device inference;
-3. describe the roles of sensing, preprocessing, model training, code generation, and embedded validation;
-4. identify the principal constraints on MCU inference: RAM, Flash, throughput, timing, and energy;
-5. inspect real IMU recordings in MATLAB and compute an interpretable vibration feature;
-6. distinguish a prototype's test-set accuracy from evidence of reliable deployment.
+1. explain what embedded AI is and identify where inference takes place in an embedded system;
+2. distinguish data acquisition, model development, optimization, code generation, deployment, and on-device validation;
+3. recognize the roles of MATLAB, relevant toolboxes, Simulink, and target-specific support packages;
+4. compare features of microcontrollers, embedded computers, and hardware accelerators as AI targets;
+5. characterize a simple sensor-processing pipeline using MATLAB without requiring hardware;
+6. define measurable constraints for accuracy, latency, memory, throughput, and energy;
+7. formulate an appropriate evaluation plan before selecting or deploying a model.
 
-## 1.1 Why embedded AI?
+## Why embedded AI?
 
-Many sensors generate data continuously: an inertial measurement unit (IMU) on a wearable, a vibration sensor mounted on a machine, a microphone on an appliance, or a camera watching a production line. Traditionally, embedded systems have used hand-designed rules to convert these signals into actions. Machine learning adds a data-driven alternative: the system estimates patterns from examples, rather than relying on a single manually chosen threshold.
+Small computing devices increasingly need to interpret measurements rather than simply record or transmit them. A wearable device may classify activity from an inertial measurement unit (IMU), an industrial sensor may detect unusual vibration, a microphone may recognize an acoustic event, and a camera may identify an object. Such applications combine **physical sensing**, **signal processing**, and **machine learning** with a computing platform close to the source of the data.
 
-**Embedded AI** refers to performing AI-related computation on or close to the device that generates data. This location can reduce communication and the latency of a remote round trip, and it may keep raw measurements on the device. However, a microcontroller has much less memory and processing capacity than a desktop GPU. The model and its surrounding signal-processing pipeline must fit and meet a timing deadline.
+**Embedded AI** is the use of AI methods within an embedded application, often with inference executing on a microcontroller, processor, or dedicated accelerator inside or near the sensing system. Models are typically trained on a development computer and then adapted for a smaller target. The inference software must work alongside device drivers, buffers, communication code, and application logic.
 
-Consider an Arduino Nano 33 BLE Sense Rev1 with its LSM9DS1 IMU. It captures acceleration and angular velocity. Our first application classifies the vibration of the *board itself* into three conditions: **NORMAL**, **TAPPING**, and **GENTLE_SHAKING**. These names correspond to experimental data-collection actions, not standardized industrial vibration limits. In the included project, the training data and eventual deployment use the same model of board and IMU.
+Running inference near a sensor can reduce the need to send every raw observation to a remote server. It may also reduce communication latency and help applications continue operating without an internet connection. These advantages are *conditional*: local processing consumes memory and energy, while a remote or hybrid solution may still be preferable for more demanding tasks.
 
-![The original project workflow—from recordings to training, optimization, generated code, and Arduino deployment.](../matlab/projects/vibration-severity-monitor/images/workflow.png){#fig-course-workflow width=93%}
+### Where does inference run?
 
-*Figure @fig-course-workflow summarizes the supplied full tutorial. This introductory chapter focuses on the first three steps; later chapters will examine optimization and deployment.*
+| Approach | Typical inference location | Strength | Typical consideration |
+|---|---|---|---|
+| Cloud AI | Remote server or data center | High computational capacity | Connectivity, upload cost, round-trip delay |
+| Edge AI | Gateway, local computer, or edge server | Local processing with more resources than an MCU | Device power and hardware/software complexity |
+| On-device AI / TinyML | Microcontroller or embedded processor | Low-power local decisions on a compact device | Tight RAM, storage, and compute limits |
+| In-sensor AI | Supported sensing component or sensor-integrated logic | Can avoid frequent transfers and host wakeups | Constrained features, algorithms, and configuration options |
 
-## 1.2 The MATLAB-to-device workflow
+These approaches are not mutually exclusive. A system can make a rapid decision locally and send summaries or selected events to a server for further analysis.
 
-A useful development pipeline has six stages:
+## The MATLAB-centered development workflow
 
-1. **Acquire:** record sensor data and document timestamp units, sample rate, sensor ranges, and mounting conditions.
-2. **Prepare:** visualize, clean, resample, segment, and derive features using MATLAB.
-3. **Train:** compare a simple baseline against a learned model, with a split that reflects independent recording sessions.
-4. **Optimize:** evaluate whether quantization or compression is needed for the resource budget.
-5. **Deploy:** generate compatible code or package a supported network for the selected target and integrate drivers and real-time data acquisition.
-6. **Verify:** compare host and target outputs and measure inference time, RAM/Flash use, power, and robustness under different conditions.
+The central idea of this book is to **develop and verify the complete AI pipeline before and after deployment**. MATLAB is useful because the same environment can support data exploration, numerical signal processing, modeling, experiments, and parts of the code-generation workflow. However, not every MATLAB operation or trained model is directly deployable to every target.
 
-The most important distinction is between **offline training** and **embedded inference**. Training often happens on a computer and may require many epochs. The trained model is then exported for inference, which performs predictions on new measurements. Some applications also train on-device, but that is not the default workflow in this book.
+A typical workflow comprises the following stages:
 
-In MATLAB, typical tools include `readtable`, `timetable`, filtering and spectral-analysis routines, `fitctree` and other classification functions, `trainnet` for supported deep learning workflows, and code-generation products for supported deployment targets. Each is a tool for a different engineering step; merely having trained a network does not ensure it is compatible with embedded code generation.
+1. **Acquire and inspect data.** Read recorded measurements or connect to supported hardware. Check units, sampling intervals, missing values, noise, and measurement conditions.
+2. **Prepare the signal.** Filter, resample where justified, segment into windows, and compute features or tensors expected by the model.
+3. **Train and evaluate.** Establish a simple baseline, select a model, tune parameters using validation data, and retain an independent test set.
+4. **Assess deployability.** Examine model size, required operators, numeric precision, buffer sizes, and target compatibility.
+5. **Generate or integrate code.** Use a supported MATLAB/Simulink code-generation path when available, or integrate a compatible inference implementation into target firmware.
+6. **Validate on hardware.** Confirm that the target reproduces the intended signal-processing and inference behavior, then measure accuracy, timing, memory, and power under realistic operation.
 
-## 1.3 Understanding an IMU recording
+::: {.callout-important title="Training is not deployment"}
+A model that predicts correctly in MATLAB is a **candidate** for an embedded application. Successful deployment additionally requires compatible generated or integrated code, sensor interfacing, correct preprocessing, sufficient memory, and timing/power measurements on the actual device.
+:::
 
-An IMU may include an accelerometer (linear acceleration, including gravity) and gyroscope (angular velocity). The supplied dataset contains six channels:
+### Training versus inference
 
-| Channel | Meaning | Units in supplied CSV |
+During **training**, an algorithm uses examples to learn parameters such as decision boundaries or neural-network weights. Training often happens on a laptop or workstation. During **inference**, the learned parameters are used to make predictions from new sensor measurements; this is the part commonly moved to the embedded device.
+
+For an input window $X$, a preprocessing function $g$, and a trained model $f_\theta$, the embedded prediction can be expressed as
+
+$$
+\hat{y} = f_\theta(g(X)).
+$$ {#eq-embedded-pipeline}
+
+This equation is deliberately simple, but it reveals an important implementation requirement: **the deployed preprocessing $g$ must be consistent with the preprocessing used during model development**. A change in filtering, axis ordering, sampling rate, normalization, or window length can produce incorrect predictions even when the model file is unchanged.
+
+### Choosing MATLAB tools
+
+The products needed depend on the application rather than the book title. The following table is a practical guide; it does not imply that every function, model, or hardware device is supported by every release.
+
+| Development task | MATLAB ecosystem | Example activities |
 |---|---|---|
-| `ax`, `ay`, `az` | Acceleration along three sensor axes | g |
-| `gx`, `gy`, `gz` | Angular velocity along three axes | degrees/s |
-| `timestamp_us` | Sample time | microseconds |
-| `label` | Recording condition | NORMAL / TAPPING / GENTLE_SHAKING |
+| Data exploration and numerical computing | MATLAB | Tables, arrays, plotting, statistics, scripts, functions |
+| Digital signal processing | Signal Processing Toolbox and MATLAB functions | Filtering, spectral analysis, time-frequency features |
+| Classical machine learning | Statistics and Machine Learning Toolbox | Classification Learner, decision trees, SVMs, ensembles |
+| Deep learning | Deep Learning Toolbox | Design, train, and evaluate supported neural networks |
+| System modeling and simulation | Simulink | Model-based design, sensor processing, timing and integration |
+| C/C++ generation | MATLAB Coder / Embedded Coder, as applicable | Generate code from supported algorithms and integrate with embedded projects |
+| Deep-learning inference code generation | Supported deep-learning code-generation workflows and target libraries | Generate compatible inference code for supported networks and targets |
+| Hardware access and deployment | Platform-specific MATLAB/Simulink support packages | Sensor I/O and target workflows on supported boards |
 
-The recordings come from **45 independent sessions**: 15 for each of the three conditions, with approximately 30 seconds per session. The collection nominally targets 100 samples per second, but the attached project reports occasional missing samples. Real sampling cannot always be treated as uniformly spaced: timestamps should be checked before using frequency-domain methods or constructing fixed-length windows.
+A hardware support package may support data acquisition without supporting a particular network or deployment method. Check the relevant MATLAB release, code-generation requirements, and board revision **before** finalizing a lab or application.
 
-In MATLAB, load a CSV and inspect its first few rows:
+::: {.callout-tip title="Start with the simplest working model"}
+Use basic MATLAB plotting and a small decision rule or classifier to establish an interpretable baseline. Only introduce a larger network after measuring what the baseline cannot do.
+:::
 
-```{.matlab}
-projectRoot = fullfile(pwd,"matlab","projects","vibration-severity-monitor");
-file = fullfile(projectRoot,"data","raw","Vibration_Dataset", ...
-    "TAPPING","TAPPING_001.csv");
-T = readtable(file);
-head(T,5)
-```
+## Understand the target hardware
 
-The code above assumes MATLAB's working folder is the repository root. Change `projectRoot` if needed; no toolbox is required to read the CSV.
+Embedded hardware differs in processing capability, memory organization, operating system, and power supply. These differences affect the choice of algorithm as much as the training dataset does.
 
-Convert the relative timestamps to seconds and plot all three acceleration axes:
+| Target class | Representative platform | Common deployment pattern | Main concern |
+|---|---|---|---|
+| Microcontroller | Arduino Nano 33 BLE Sense, STM32-based board | Firmware with sensor drivers and lightweight inference | Limited SRAM/Flash and real-time execution |
+| Embedded computer | Raspberry Pi | Operating-system application with local inference | End-to-end runtime and system power |
+| Embedded GPU/NPU | Supported edge accelerator platforms | Runtime-specific optimized model | Model/operator compatibility and transfers |
+| Sensor-integrated processor | Selected smart IMUs and other intelligent sensors | Sensor-native logic or supported ML configuration | Narrow model and feature support |
 
-```{.matlab}
-t = (double(T.timestamp_us)-double(T.timestamp_us(1)))/1e6;
-plot(t,[T.ax T.ay T.az]);
-xlabel("Time (s)"); ylabel("Acceleration (g)");
-legend("a_x","a_y","a_z"); grid on
-```
+The target choice should follow the use case. A simple motion classifier may fit a microcontroller; an image segmentation system could require an accelerator. It is also useful to distinguish three physical locations of computation: *inside the sensor*, *on the host embedded processor*, and *on an attached accelerator*.
 
-![Representative acceleration and rotation signals from the supplied recordings.](../matlab/projects/vibration-severity-monitor/images/signals.png){#fig-intro-signals width=92%}
+## Embedded AI is a system, not just a model
 
-### Sampling intervals
-
-A practical first diagnostic is `diff(t)`. Its values show how far apart samples were recorded:
-
-```{.matlab}
-dt = diff(t);
-fprintf("Median interval: %.3f ms\n",1000*median(dt));
-fprintf("Largest interval: %.3f ms\n",1000*max(dt));
-histogram(1000*dt); xlabel("Sample interval (ms)");
-```
-
-Sampling irregularity matters because a one-second window of 100 rows is not necessarily exactly one second of elapsed time. The supplied `loadRecordings` helper interpolates each complete recording onto a uniform 100 Hz grid using actual timestamps. It is suitable for the provided tutorial; for other sensors, evaluate whether interpolation obscures short transients.
-
-## 1.4 A first physical feature: vibration RMS
-
-The raw acceleration contains gravity, which changes when the board is tilted. A simple vibration indicator should remove each channel's mean before computing root-mean-square (RMS) amplitude. Given a matrix $X \in \mathbb{R}^{N\times 3}$ containing the three acceleration axes, define the centered signal
+An inference application usually performs several operations before and after running the model:
 
 $$
-\widetilde{X}_{i,j}=X_{i,j}-\frac{1}{N}\sum_{k=1}^{N}X_{k,j}.
+\text{Sensor} \rightarrow \text{Acquisition} \rightarrow
+\text{Preprocessing} \rightarrow \text{Inference} \rightarrow
+\text{Decision or Action}.
 $$
 
-The combined acceleration RMS is
+For streaming applications, the device also maintains a data buffer or window. Consider a three-axis accelerometer sampled at a nominal rate $f_s$ with a window duration $T_w$. The number of samples in a window is approximately
 
 $$
-R=\sqrt{\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{3}\widetilde{X}_{i,j}^{2}}.
-$$ {#eq-intro-rms}
+N = f_s T_w,
+$$ {#eq-samples-per-window}
 
-This is an *experiment-specific motion amplitude*, not a calibrated measurement of machinery vibration severity according to a formal industrial standard. In MATLAB:
+and a raw floating-point buffer holding $C$ channels with $b$ bytes per sample requires approximately
 
-```{.matlab}
-a = [T.ax T.ay T.az];
-aCentered = a - mean(a,1);
-rmsG = sqrt(mean(sum(aCentered.^2,2)));
-fprintf("Centered acceleration RMS: %.4f g\n",rmsG);
-```
+$$
+M_{\mathrm{buffer}} = N C b.
+$$ {#eq-window-memory}
 
-Why does the mean matter? A stationary board can report nearly 1 g on its vertical accelerometer axis because of gravity. Directly taking the RMS of the uncentered data would primarily measure that static component. Mean subtraction removes the constant part within the window. It is not a complete correction for changing orientation during motion, and its limitations should be discussed when interpreting results.
+For example, a 1-second window from six IMU channels sampled at 100 Hz contains 600 values. At 4 bytes per `single`-precision value, the raw data buffer alone is about 2,400 bytes. Actual RAM consumption will be greater because intermediate arrays, model working memory, application state, and runtime overhead may also be needed. A ring buffer and streaming features can reduce temporary storage in some implementations.
 
-A second useful feature is **crest factor**, which compares the largest instantaneous amplitude with RMS. Tapping can produce brief peaks even when total energy is modest. The shape of the waveform may therefore help distinguish tapping from sustained shaking.
+### Timing and streaming constraints
 
-## 1.5 Time windows and honest evaluation
+If the application produces a prediction every $H$ samples, then under nominal periodic sampling its prediction interval is
 
-Models usually expect fixed-size inputs. At 100 Hz, a one-second window contains **100 samples**, or a `100 × 6` matrix for the six IMU channels. Windows may overlap during training to increase the number of examples. However, overlapping windows from one recording are not statistically independent.
+$$
+T_{\mathrm{step}} = \frac{H}{f_s}.
+$$ {#eq-inference-step}
 
-A critical experimental rule is to **split recordings before extracting windows**. Randomly splitting individual windows can put near-duplicates or session-specific artifacts in both training and test sets, making performance look better than it is.
+The processing path must finish within its required deadline, allowing time for sampling, feature extraction, inference, and other tasks. A model that has a short isolated inference time can still miss deadlines when sensing and preprocessing are included.
 
-The supplied tutorial chooses **9 recordings per class for training, 3 per class for validation, and 3 per class for testing**. It forms overlapping training windows but non-overlapping validation/test windows. This is much stronger evidence than randomly splitting all windows, though the dataset is still small and limited to one board and recording protocol.
+### What should be measured?
 
-```{.matlab}
-projectRoot = fullfile(pwd,"matlab","projects","vibration-severity-monitor");
-addpath(fullfile(projectRoot,"helpers"));
-dataRoot = fullfile(projectRoot,"data","raw","Vibration_Dataset");
-recordings = loadRecordings(string(dataRoot),100);
-summary(recordings.Class)
-```
-
-The `loadRecordings` helper interpolates onto a regular sample grid, and `splitRecordings` groups sessions before the tutorial creates windows. Complete code is provided in [Lab 1](../labs/01-vibration-severity-monitor.qmd).
-
-## 1.6 Why start with a lightweight model?
-
-Before using a neural network, test an interpretable baseline. The supplied project learns a shallow decision tree from log-RMS amplitude. In its documented test split, the baseline correctly classified approximately **98.85%** of the held-out windows; the original authors reported **100%** for their 1-D CNN on those windows. These are **reported results from the supplied example**, not independently repeated measurements, and the small number of independent test sessions limits what can be concluded.
-
-A baseline tells us what extra complexity actually buys us. If a two-threshold rule is adequate, a neural network may consume memory and energy without providing enough practical gain. If taps and continuous shaking overlap in RMS, a temporal model can exploit their differing waveforms. That is a reason to compare models empirically rather than assume larger models are automatically better.
-
-## 1.7 Embedded systems: accuracy is one metric
-
-An embedded model is a component in a larger pipeline. Consider an application that must report once per second. With a **one-second acquisition window**, model inference must finish quickly enough to satisfy the system's scheduling and buffering assumptions. If sensing pauses during inference, the implementation may miss samples or produce windows with gaps. Double buffering can sometimes allow acquisition and inference to overlap, but it requires extra RAM.
-
-Useful metrics include:
-
-| Metric | How to interpret it |
+| Metric | Question it answers |
 |---|---|
-| Accuracy / classwise recall | Does the model distinguish the required conditions? |
-| Inference latency (ms/window) | How long does the deployed prediction take? |
-| Flash / program storage | Can generated code and parameters fit? |
-| Peak RAM | Can input buffers, activations, and application state fit? |
-| Energy per prediction (J) | What is the measured energy consumed per inference? |
-| Robustness to mounting changes | Does performance hold outside the recorded conditions? |
+| Accuracy, precision, recall, F1 | Does the model make useful predictions? |
+| End-to-end decision latency | How long from a sufficient observation to a result? |
+| Inference time | How long does the prediction computation take? |
+| RAM and nonvolatile storage | Does the *complete application* fit? |
+| Throughput | How many windows or inputs can the system process per second? |
+| Average and peak power | What does the complete device consume during operation? |
+| Energy per inference | How much energy is spent per completed prediction? |
 
-Memory used by an embedded application includes much more than neural network parameters. Input buffers, intermediate activations, the inference runtime, sensor drivers, and application code all consume space. Power consumption must be measured on the real hardware rather than inferred solely from MATLAB execution time.
+If power is approximately constant during an interval, energy is $E = P\Delta t$. For time-varying measurements, the more general relationship is
 
-## 1.8 MATLAB software and target hardware
+$$
+E = \int_{t_0}^{t_1} V(t)I(t)\,dt.
+$$ {#eq-energy}
 
-A practical MATLAB learning environment has several layers:
+Power and energy should be measured at a clearly specified boundary—for example, an entire board at its supply input—rather than presented as though they isolate model computation when they do not.
 
-- **Core MATLAB** supports CSV import, data inspection, graphics, and numerical computation.
-- **Statistics and Machine Learning Toolbox** supports classical classifiers such as `fitctree`.
-- **Deep Learning Toolbox** supports training and inference workflows for neural networks.
-- **Code generation and deployment tools** are required for exporting supported algorithms to embedded targets. They are separate products and may require target-specific setup.
-- **Hardware drivers and firmware** provide actual sensor access and time-controlled acquisition on the deployed device.
+## A first MATLAB exercise: from samples to a decision
 
-This course's first dataset comes from the **Arduino Nano 33 BLE Sense Rev1**, whose IMU is the **LSM9DS1**. **Rev2 uses different sensing hardware**; the supplied `Arduino_LSM9DS1` firmware is not a substitute for a Rev2 driver. MATLAB releases and hardware support packages also change over time. Review the current MathWorks documentation and verify your exact board and installed product versions before deployment.
+This short example runs in **base MATLAB**, uses generated measurements, and requires no sensor or specialized toolbox. It illustrates how a compact feature converts a window of samples into a potential model input. It is intentionally *not* an industrial vibration detector or a trained classifier.
 
-## 1.9 Worked exercise: inspect motion in three conditions
-
-Open the short MATLAB script at `matlab/fundamentals/01-inspect-vibration.m`. It reads one sample recording per class, calculates centered RMS, and compares the results. It requires only core MATLAB features for the data-inspection portion.
-
-**Investigation:** Before running it, predict which condition will have the largest RMS and which condition may have the largest instantaneous transient relative to its RMS. Record whether the numerical results support the hypothesis.
+First, generate two synthetic acceleration sequences. Both include a static offset that approximates gravity on one axis; the second also contains a small oscillatory component.
 
 ```{.matlab}
-% In MATLAB, set repoRoot to the repository root folder:
-run(fullfile(repoRoot,"matlab","fundamentals","01-inspect-vibration.m"));
+% Reproducible synthetic illustration (base MATLAB)
+rng(7);
+fs = 100;                  % Samples per second
+T = 2;                     % Duration in seconds
+t = (0:1/fs:T-1/fs)';
+
+rest = [0.01*randn(size(t)), ...
+        0.01*randn(size(t)), ...
+        1 + 0.01*randn(size(t))];
+
+motion = rest + [0.12*sin(2*pi*8*t), ...
+                 0.05*sin(2*pi*8*t), ...
+                 zeros(size(t))];
+
+figure;
+plot(t, rest(:,1), t, motion(:,1));
+xlabel('Time (s)');
+ylabel('Acceleration on x-axis (g)');
+legend('Rest', 'Motion');
+grid on;
 ```
 
-The next step is to reproduce the preprocessing and group-wise train/test split used in the full tutorial. That is the focus of Lab 1.
+A simple feature is the root-mean-square value of the mean-centered acceleration. Centering removes each channel's constant offset over the selected window:
+
+$$
+R = \sqrt{\frac{1}{N}\sum_{i=1}^{N}\sum_{c=1}^{C}
+\left(x_{i,c}-\bar{x}_c\right)^2}.
+$$ {#eq-motion-rms}
+
+In MATLAB, define the operation as a reusable local function or use the following direct calculations:
+
+```{.matlab}
+restCentered = rest - mean(rest, 1);
+motionCentered = motion - mean(motion, 1);
+
+rRest = sqrt(mean(sum(restCentered.^2, 2)));
+rMotion = sqrt(mean(sum(motionCentered.^2, 2)));
+
+fprintf('Rest RMS: %.4f g\n', rRest);
+fprintf('Motion RMS: %.4f g\n', rMotion);
+```
+
+The oscillatory example should generally produce a larger RMS than the rest example, but the values depend on the synthetic noise. This observation suggests a possible *feature*. It does **not** establish a reliable classification threshold across sensors, mounting arrangements, activities, or environments.
+
+### From a feature to a learned model
+
+A practical machine-learning experiment would gather many independently recorded examples, compute features from each recording or window, associate the correct labels, and split the sessions into training, validation, and test sets. A classifier can then learn a decision boundary from the training examples.
+
+In MATLAB, a classical model might be trained with `fitctree` using **Statistics and Machine Learning Toolbox**:
+
+```{.matlab}
+% Illustration of the API; XTrain and YTrain must come from
+% properly collected and partitioned labeled recordings.
+%
+% model = fitctree(XTrain, YTrain);
+% predictedLabels = predict(model, XTest);
+```
+
+The comments are intentional: the synthetic two-signal demonstration above is not sufficient to train or evaluate a meaningful model. [Lab 1](../labs/01-vibration-severity-monitor.qmd) uses a real collection of recordings to examine this distinction experimentally.
+
+## Designing a credible embedded AI experiment
+
+A sound workflow should establish its evaluation protocol *before* inspecting final test performance.
+
+### Dataset and model evaluation
+
+- **Define the unit of independence.** If several overlapping windows come from one recording session, keep those windows in the same split to avoid leakage.
+- **Use meaningful baselines.** Compare a simple feature or lightweight classifier against more complex models.
+- **Preserve the deployment pipeline.** Apply consistent filtering, normalization, axis order, numeric precision, and window construction.
+- **Report uncertainty and limitations.** Performance on one board and one recording protocol does not establish reliability across users, machines, or environmental conditions.
+
+### Hardware evaluation
+
+- **Define the measurement boundary.** Distinguish model-only timing from end-to-end latency and whole-board power.
+- **Document the target.** Record board revision, sensor and library versions, MATLAB release, generated-code configuration, and clock/power settings.
+- **Check operational behavior.** Look for missed samples, buffer overflows, startup costs, and the timing of prediction outputs.
+- **Compare host and target.** Test the same inputs on MATLAB and the deployed application, allowing for justified numeric differences.
+
+::: {.callout-warning title="Do not infer energy efficiency from model size alone"}
+A smaller model can reduce storage or computation, but actual energy depends on memory access, hardware, duty cycle, sensor and communication activity, and idle/sleep behavior. Measure it on the target device.
+:::
+
+## How to use this book
+
+The chapters follow a progression from **MATLAB-based development** to **real embedded inference**:
+
+| Book part | Learning focus |
+|---|---|
+| Part I — Getting started | MATLAB workflow, sensing, feature extraction, classical machine learning |
+| Part II — Developing models | Deep learning, time series, anomaly detection, optimization |
+| Part III — Deployment | Code generation, microcontrollers, Raspberry Pi, and performance measurement |
+| Part IV — Applications | Complete sensing projects and advanced embedded AI topics |
+
+A parallel [weekly laboratory track](../labs/weekly-lab-plan.qmd) provides datasets, code, and guided investigations. **Chapter 1 explains the ideas and engineering decisions; Lab 1 performs the detailed vibration-monitoring exercise.** You can read the chapters independently and return to the labs when you have access to MATLAB and, where required, hardware.
 
 ## Key takeaways
 
-Embedded AI is a *complete system*, not simply a trained model. MATLAB provides a consistent environment to explore the signal, build models, and prepare suitable algorithms for deployment. Reliable results require careful treatment of sampling and recording groups, comparison with simple baselines, and validation of actual embedded timing, memory, and power.
+1. Embedded AI is a complete sensing-to-decision pipeline, not simply a compressed model.
+2. MATLAB provides tools for data exploration, modeling, testing, and compatible code generation, but deployment support must be checked for each target and workflow.
+3. Training happens mainly on a development computer; inference is commonly deployed near the data source.
+4. Accurate preprocessing, timing, memory, power, and sensor integration matter as much as predictive accuracy.
+5. Reproducible, session-aware evaluation and on-device measurements are essential for trustworthy results.
 
 ## Exercises
 
-1. **Conceptual:** Explain why the same classification accuracy may correspond to different embedded systems when two models have different RAM and latency requirements.
-2. **Coding:** Plot `diff(timestamp_us)` for all sessions of one class. Compare medians and long-tail intervals.
-3. **Experimental:** Compute centered acceleration RMS separately for `NORMAL`, `TAPPING`, and `GENTLE_SHAKING` recordings. Which classes overlap?
-4. **Evaluation:** Explain why randomly distributing windows from one recording between train and test sets is a flawed test.
-5. **Deployment:** Identify three hardware-related quantities that cannot be established from desktop MATLAB accuracy alone.
+### Conceptual questions
 
-## Further reading
+1. Compare cloud, edge, on-device, and in-sensor AI for a wearable activity-recognition application. When would each be useful?
+2. Explain why a model can achieve high MATLAB test accuracy but fail on a microcontroller.
+3. Give three reasons the same model could produce different predictions on a host computer and an embedded target.
 
-- [MathWorks: Embedded AI](https://www.mathworks.com/solutions/embedded-ai.html)
-- [MATLAB Coder documentation](https://www.mathworks.com/help/coder/)
-- [Deep Learning Toolbox documentation](https://www.mathworks.com/help/deeplearning/)
-- [Lab 1 — Vibration Severity Monitoring](../labs/01-vibration-severity-monitor.qmd)
-- Sze et al., *Efficient Processing of Deep Neural Networks: A Tutorial and Survey* [@sze2017efficient].
+### MATLAB exercises
+
+4. Modify the synthetic signal example to use oscillation frequencies of 4, 8, and 16 Hz. Which properties of mean-centered RMS change? Which do not?
+5. Change the sampling frequency and window duration. Use @eq-window-memory to estimate the raw input memory for six `single`-precision channels.
+6. Implement a second feature—the peak absolute mean-centered acceleration or the crest factor—and compare rest and motion signals.
+
+### Design and systems questions
+
+7. For a system that produces one prediction every 250 ms, develop a timing budget for sampling, preprocessing, inference, and decision logic.
+8. Design a reproducible benchmarking table for comparing two AI models on a microcontroller, including accuracy, RAM, storage, latency, and energy.
+9. Propose a validation strategy for moving a classifier from MATLAB to a different IMU or board revision.
+
+## Further reading and practical resources
+
+- [MathWorks: Embedded AI](https://www.mathworks.com/solutions/embedded-ai.html) — overview of embedded AI development workflows.
+- [MATLAB documentation](https://www.mathworks.com/help/matlab/) — foundational MATLAB arrays, tables, scripts, and visualization.
+- [Statistics and Machine Learning Toolbox documentation](https://www.mathworks.com/help/stats/) — classical learning and evaluation.
+- [Deep Learning Toolbox documentation](https://www.mathworks.com/help/deeplearning/) — neural network development and analysis.
+- [MATLAB Coder documentation](https://www.mathworks.com/help/coder/) — requirements and workflows for supported C/C++ code generation.
+- [Environment setup](../setup.qmd) — software and hardware prerequisites for the course.
+- [Lab 1: Vibration Severity Monitoring](../labs/01-vibration-severity-monitor.qmd) — first guided experiment with a real IMU dataset.

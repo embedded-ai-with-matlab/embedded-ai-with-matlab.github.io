@@ -1,9 +1,144 @@
 /*-- scss:defaults --*/
 $primary: #175c82;
 $link-color: #175c82;
-$font-family-sans-serif: "Source Sans 3", "Segoe UI", sans-serif;
+$font-family-sans-serif: "Segoe UI", Arial, sans-serif;
+
 /*-- scss:rules --*/
-.quarto-title-block .title { font-weight: 750; letter-spacing: -.035em; }
-.sidebar-title {font-weight: 700;}
+.sidebar-title { font-weight: 700; }
 .callout { border-radius: .5rem; }
 code { font-size: .92em; }
+
+/* Hide Quarto's repeated book title only on the home page. */
+body:has(.embedded-landing) #title-block-header,
+body:has(.embedded-landing) .quarto-title-block { display: none !important; }
+
+.embedded-landing {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: normal;
+  word-spacing: normal;
+  line-height: 1.6;
+}
+.embedded-landing .embedded-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, .85fr);
+  gap: clamp(1.5rem, 4vw, 4rem);
+  align-items: center;
+  padding: 0 0 3rem;
+}
+.embedded-landing .embedded-hero-copy { min-width: 0; }
+.embedded-landing h1 {
+  color: #173451;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: clamp(2.6rem, 4.7vw, 4.4rem);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0 0 1.35rem;
+}
+.embedded-landing .embedded-lead,
+.embedded-landing .embedded-description,
+.embedded-landing .embedded-actions,
+.embedded-landing .embedded-card {
+  font-family: "Segoe UI", Arial, sans-serif;
+  letter-spacing: normal;
+  word-spacing: normal;
+  font-stretch: normal;
+  font-kerning: normal;
+  text-transform: none;
+}
+.embedded-landing .embedded-lead {
+  font-size: clamp(1.12rem, 1.75vw, 1.42rem);
+  font-weight: 500;
+  line-height: 1.55;
+  color: #285e80;
+  margin-bottom: 1.15rem;
+}
+.embedded-landing .embedded-description {
+  color: #405568;
+  font-size: 1.075rem;
+  font-weight: 400;
+  line-height: 1.8;
+  max-width: 65ch;
+}
+.embedded-landing .embedded-lead p,
+.embedded-landing .embedded-description p { margin: 0; font: inherit; line-height: inherit; color: inherit; }
+.embedded-landing .embedded-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-top: 1.8rem;
+}
+.embedded-landing .embedded-actions p { margin: 0; }
+.embedded-landing a.embedded-button {
+  display: inline-block;
+  padding: .78rem 1.15rem;
+  border: 1px solid #175c82;
+  border-radius: 5px;
+  text-decoration: none;
+  background: white;
+  color: #175c82;
+  font-size: 1rem;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+.embedded-landing a.embedded-button-primary { background: #175c82; color: #fff; }
+.embedded-landing a.embedded-button:hover { filter: brightness(.94); }
+.embedded-landing .embedded-cover img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 375px;
+  margin: 0 auto;
+  border: 1px solid #e3eaf0;
+  box-shadow: 0 12px 32px rgba(19, 50, 80, .13);
+}
+.embedded-landing .embedded-explore-heading {
+  color: #173451;
+  font-size: 1.65rem;
+  font-weight: 700;
+  margin: .1rem 0 1.2rem;
+  padding-bottom: .8rem;
+  border-bottom: 1px solid #e4eaf0;
+}
+.embedded-landing .embedded-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 1rem;
+}
+.embedded-landing .embedded-card {
+  padding: 1.2rem 1.3rem;
+  border: 1px solid #e0e7ee;
+  border-radius: .65rem;
+  background: #fff;
+}
+.embedded-landing .embedded-card h3 {
+  color: #173451;
+  font-size: 1.04rem;
+  font-weight: 700;
+  margin: 0 0 .6rem;
+}
+.embedded-landing .embedded-card p {
+  font-size: .95rem;
+  line-height: 1.6;
+  font-weight: 400;
+  margin: 0 0 .75rem;
+}
+.embedded-landing .embedded-card p:last-child { margin-bottom: 0; }
+@media (max-width: 900px) {
+  .embedded-landing .embedded-hero { grid-template-columns: 1fr; }
+  .embedded-landing .embedded-cover { grid-row: 1; }
+  .embedded-landing .embedded-cover img { max-width: 300px; }
+  .embedded-landing .embedded-cards { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 620px) {
+  .embedded-landing .embedded-cards { grid-template-columns: 1fr; }
+  .embedded-landing .embedded-actions { flex-direction: column; align-items: flex-start; }
+}

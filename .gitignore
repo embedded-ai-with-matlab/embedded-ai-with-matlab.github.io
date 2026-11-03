@@ -10,3 +10,5 @@
 **/*.asv
 **/*.mex*
 **/*~
+
+**/*.quarto_ipynb

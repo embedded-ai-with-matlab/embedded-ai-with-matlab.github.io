@@ -3,9 +3,9 @@ project:
   output-dir: _site
 
 book:
-  title: "Hands-On Embedded AI with MATLAB"
-  subtitle: "From Sensor Data to Optimized Models and On-Device Deployment"
-  author: "Embedded AI with MATLAB"
+  title: "Embedded AI with MATLAB"
+  subtitle: "From Model Development to On-Device Deployment"
+  author: "Pandarasamy Arjunan"
   repo-url: https://github.com/embedded-ai-with-matlab/embedded-ai-with-matlab.github.io
   repo-actions: [edit, issue]
   site-url: https://embedded-ai-with-matlab.github.io/
