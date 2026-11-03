@@ -1,0 +1,74 @@
+project:
+  type: book
+  output-dir: _site
+
+book:
+  title: "Hands-On Embedded AI with MATLAB"
+  subtitle: "From Sensor Data to Optimized Models and On-Device Deployment"
+  author: "Embedded AI with MATLAB"
+  repo-url: https://github.com/embedded-ai-with-matlab/embedded-ai-with-matlab.github.io
+  repo-actions: [edit, issue]
+  site-url: https://embedded-ai-with-matlab.github.io/
+  page-navigation: true
+  search: true
+  chapters:
+    - index.qmd
+    - preface.qmd
+    - setup.qmd
+    - part: "Part I — Getting Started with Embedded AI in MATLAB"
+      chapters:
+        - chapters/01-introduction-embedded-ai.qmd
+        - chapters/02-sensor-acquisition.qmd
+        - chapters/03-machine-learning.qmd
+
+    - part: "Part II — Developing AI Models with MATLAB"
+      chapters:
+        - chapters/04-deep-learning.qmd
+        - chapters/05-time-series-anomaly.qmd
+        - chapters/06-model-optimization.qmd
+
+    - part: "Part III — Deploying AI Models Using MATLAB"
+      chapters:
+        - chapters/07-code-generation.qmd
+        - chapters/08-tinyml-microcontrollers.qmd
+        - chapters/09-raspberry-pi.qmd
+        - chapters/10-benchmarking.qmd
+
+    - part: "Part IV — End-to-End MATLAB Projects"
+      chapters:
+        - chapters/11-sensing-applications.qmd
+        - chapters/12-advanced-applications.qmd
+
+    - part: "Laboratory Track"
+      chapters:
+        - labs/weekly-lab-plan.qmd
+        - labs/01-vibration-severity-monitor.qmd
+        - labs/lab-template.qmd
+    - references.qmd
+
+bibliography: references.bib
+format:
+  html:
+    theme: [cosmo, styles/book.scss]
+    toc: true
+    toc-depth: 3
+    code-copy: true
+    code-fold: false
+    number-sections: true
+    smooth-scroll: true
+    fig-align: center
+  pdf:
+    documentclass: scrbook
+    pdf-engine: lualatex
+    toc: true
+    number-sections: true
+    keep-tex: false
+  epub:
+    toc: true
+
+execute:
+  freeze: auto
+  warning: false
+  error: true
+
+editor: source

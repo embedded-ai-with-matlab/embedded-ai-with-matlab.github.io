@@ -1,0 +1,25 @@
+---
+title: "Hands-On Embedded AI with MATLAB"
+subtitle: "From Sensor Data to Optimized Models and On-Device Deployment"
+---
+
+# Welcome {.unnumbered}
+
+**Hands-On Embedded AI with MATLAB** is an open, reproducible course and practical textbook for learning how to develop, optimize, deploy, and evaluate AI systems on embedded hardware. It starts with a sensor-data example and progresses from MATLAB analysis to actual on-device inference.
+
+## Start here
+
+1. Read [Chapter 1](chapters/01-introduction-embedded-ai.qmd) for the MATLAB-first development workflow.
+2. Follow [Lab 1: Vibration Severity Monitoring](labs/01-vibration-severity-monitor.qmd) using the included **45 recordings** from an Arduino Nano 33 BLE Sense Rev1.
+3. Open `matlab/projects/vibration-severity-monitor/README.md` to run the full six-stage MATLAB example.
+4. See [Setup](setup.qmd) and the repository README before attempting hardware deployment.
+
+## How to use this book
+
+Every chapter is structured around learning objectives, a practical MATLAB workflow, an experiment, a systems interpretation, exercises, and further reading. Labs are independent, hypothesis-driven activities and include reproducible data and reusable scripts. The book is written in Quarto; MATLAB code runs in MATLAB, not on the book website.
+
+## Hardware philosophy
+
+**You can complete Lab 1's data analysis without a board.** A physical Arduino Nano 33 BLE Sense **Rev1** with an LSM9DS1 IMU is needed only for the optional on-device extension. Rev2 uses a different IMU and is *not* drop-in compatible with the included firmware.
+
+[Environment setup](setup.qmd) · [Source repository](https://github.com/embedded-ai-with-matlab/embedded-ai-with-matlab.github.io)

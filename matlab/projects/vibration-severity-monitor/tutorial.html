@@ -1,0 +1,618 @@
+<title>Vibration Severity Monitor</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: documentation-example style: sticky step index, one 70ch reading column, Arial type, grey code and output boxes, blue links. */
+:root {
+  --ink: #212121;
+  --ink-soft: #5f6368;
+  --paper: #ffffff;
+  --panel: #f5f5f5;
+  --rule: #d9d9d9;
+  --trace: #0076a8;          /* link and step-marker blue */
+  --trace-soft: #e5f1f6;
+  --amber: #c45400;          /* orange accent: strings, callouts */
+  --code-bg: #f5f5f5;
+  --out-bg: #ffffff;
+  --plate: #ffffff;
+  --font-display: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  --font-body: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  --font-mono: Menlo, Monaco, Consolas, "Courier New", monospace;
+  --step-0: 0.82rem;
+  --step-1: 1rem;
+  --step-2: 1.2rem;
+  --step-3: 1.5rem;
+  --step-4: 2.1rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #e8eaed; --ink-soft: #a8adb3; --paper: #16181b; --panel: #202326; --rule: #34383d;
+    --trace: #4db3e6; --trace-soft: #13303d; --amber: #f0884a; --code-bg: #202326; --out-bg: #1a1c1f;
+    --plate: #ffffff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #e8eaed; --ink-soft: #a8adb3; --paper: #16181b; --panel: #202326; --rule: #34383d;
+  --trace: #4db3e6; --trace-soft: #13303d; --amber: #f0884a; --code-bg: #202326; --out-bg: #1a1c1f;
+  --plate: #ffffff; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.62;
+}
+a { color: var(--trace); text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--trace); outline-offset: 2px; border-radius: 2px; }
+
+.shell {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 3rem;
+  max-width: 76rem;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 2.5rem 4rem;
+}
+
+/* Step index */
+nav.index {
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + 1.5rem);
+  align-self: start;
+  font-size: var(--step-0);
+  border-left: 1px solid var(--rule);
+  padding-left: 1rem;
+}
+nav.index p {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  margin: 0 0 0.6rem;
+}
+nav.index ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+nav.index a { color: var(--ink-soft); text-decoration: none; display: block; }
+nav.index a:hover { color: var(--trace); }
+nav.index .n { font-family: var(--font-mono); color: var(--trace); margin-right: 0.4rem; }
+
+main { min-width: 0; max-width: 46rem; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--step-0);
+  color: var(--trace);
+  letter-spacing: 0.04em;
+  margin: 0 0 0.6rem;
+}
+h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--step-4);
+  line-height: 1.12;
+  margin: 0 0 1.2rem;
+  text-wrap: balance;
+}
+h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--step-3);
+  line-height: 1.2;
+  margin: 3.5rem 0 1rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--rule);
+  text-wrap: balance;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+h2 .num {
+  font-family: var(--font-mono);
+  font-size: var(--step-1);
+  font-weight: 500;
+  color: var(--paper);
+  background: var(--trace);
+  border-radius: 3px;
+  padding: 0.05rem 0.45rem;
+  flex: none;
+}
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--step-2);
+  margin: 2.2rem 0 0.6rem;
+  text-wrap: balance;
+}
+p, li { max-width: 68ch; }
+.lede { font-size: 1.08rem; color: var(--ink); }
+
+/* Board spec strip */
+.spec {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.4rem;
+  font-family: var(--font-mono);
+  font-size: var(--step-0);
+  color: var(--ink-soft);
+  border-block: 1px solid var(--rule);
+  padding-block: 0.7rem;
+  margin: 1.6rem 0;
+}
+.spec b { color: var(--ink); font-weight: 500; }
+
+/* Key results */
+.results {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 1.8rem 0;
+}
+.results div { background: var(--panel); padding: 0.9rem 1rem; min-width: 0; }
+.results strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.results span { font-size: var(--step-0); color: var(--ink-soft); }
+
+.steps { padding-left: 1.3rem; }
+.steps li { margin-bottom: 0.3rem; }
+.steps code { font-size: 0.85em; }
+
+.req {
+  background: var(--panel);
+  border-radius: 6px;
+  padding: 1rem 1.2rem;
+  font-size: 0.92rem;
+  margin: 1.6rem 0;
+}
+.req p { margin: 0.2rem 0; }
+.req b { font-weight: 600; }
+
+/* Code and output */
+code { font-family: var(--font-mono); font-size: 0.88em; background: var(--code-bg); padding: 0.08em 0.3em; border-radius: 3px; }
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  margin: 1rem 0;
+  padding: 0.9rem 1.1rem;
+  overflow-x: auto;
+  border-radius: 6px;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+pre.code { background: var(--code-bg); border: 1px solid var(--rule); }
+pre.out {
+  background: var(--out-bg);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--trace);
+  color: var(--ink-soft);
+}
+.c { color: var(--ink-soft); font-style: italic; }
+.k { color: var(--trace); }
+.s { color: var(--amber); }
+
+/* Figures */
+figure { margin: 1.4rem 0; }
+figure .plate {
+  background: var(--plate);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+figure img { display: block; width: 100%; height: auto; max-width: 100%; }
+figure.narrow .plate { max-width: 34rem; }
+figcaption { font-size: var(--step-0); color: var(--ink-soft); margin-top: 0.45rem; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; margin: 1rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--font-display); font-weight: 600; color: var(--ink-soft); border-bottom-color: var(--ink-soft); }
+td.num, th.num { text-align: right; }
+tr.best td { font-weight: 600; }
+
+.callout {
+  border-left: 3px solid var(--amber);
+  background: var(--panel);
+  padding: 0.8rem 1.1rem;
+  border-radius: 0 6px 6px 0;
+  margin: 1.4rem 0;
+}
+.callout p { margin: 0.3rem 0; }
+
+.seealso { font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.9; }
+.seealso code { background: var(--code-bg); }
+ol.refs { padding-left: 1.6rem; font-size: 0.92rem; }
+ol.refs li { margin-bottom: 0.5rem; overflow-wrap: anywhere; }
+footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-size: var(--step-0); color: var(--ink-soft); }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  nav.index { position: static; border-left: 0; padding-left: 0; border-bottom: 1px solid var(--rule); padding-bottom: 1rem; margin-bottom: 1.5rem; }
+  nav.index ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  h1 { font-size: 1.85rem; }
+  nav.index ol { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* PDF / print */
+@page { size: A4; margin: 16mm 15mm 18mm; }
+@media print {
+  :root { --paper: #ffffff; --panel: #f5f5f5; --code-bg: #f5f5f5; }
+  body { font-size: 10.5pt; }
+  .shell { display: block; padding: 0; max-width: none; }
+  nav.index { display: none; }
+  main { max-width: none; }
+  h2 { break-before: page; margin-top: 0; border-top: 0; }
+  h2.keep { break-before: auto; margin-top: 2rem; }
+  h3 { break-after: avoid; }
+  figure, pre, .table-wrap, .results, .callout { break-inside: avoid; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  a { color: var(--ink); }
+}
+.led { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; background: var(--led); margin-right: 0.45em; vertical-align: 0.02em; box-shadow: 0 0 0 1px var(--rule); }
+td:has(> .led) { white-space: nowrap; }
+</style>
+
+<div class="shell">
+<nav class="index" aria-label="Steps">
+  <p>On this page</p>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#step-1"><span class="n">1</span>Prepare data</a></li>
+    <li><a href="#step-2"><span class="n">2</span>Train networks</a></li>
+    <li><a href="#step-3"><span class="n">3</span>Compress classifier</a></li>
+    <li><a href="#step-4"><span class="n">4</span>Quantize networks</a></li>
+    <li><a href="#step-5"><span class="n">5</span>Generate code</a></li>
+    <li><a href="#step-6"><span class="n">6</span>Deploy and test</a></li>
+    <li><a href="#next">Next steps</a></li>
+    <li><a href="#files">Supporting files</a></li>
+  </ol>
+</nav>
+
+<main>
+<p class="eyebrow">MATLAB R2026b · Embedded AI tutorial 2</p>
+<h1>Build a Vibration Severity Monitor from Your Own IMU Recordings on Arduino Nano 33 BLE Sense</h1>
+
+<section id="overview">
+<p class="lede">This example shows how to train, compress, and deploy a vibration severity monitor using data recorded with the same Arduino® Nano 33 BLE Sense that runs the model. Every second, the board reports whether it is still, vibrating lightly, or vibrating strongly, and flags vibration it does not recognize.</p>
+
+<p>In the first tutorial, the detector was trained on a public ceiling-fan dataset. On the board it reported every window as unknown, because the board and its surroundings looked nothing like the training data. This <em>domain shift</em> is the most common reason embedded AI models fail in the field. This example removes it by training on 45 recordings made with the board's own LSM9DS1 IMU, so the deployed model reads exactly the sensor and settings it was trained on.</p>
+
+<div class="spec" aria-label="Recording setup">
+  <span><b>LSM9DS1</b> accel + gyro</span>
+  <span><b>100 Hz</b> sampling</span>
+  <span><b>±4 g</b> · <b>±2000 °/s</b></span>
+  <span><b>45</b> recordings × 30 s</span>
+  <span><b>1 s</b> windows (100 × 6)</span>
+</div>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Level</th><th>Recorded as</th><th>Character</th><th>LED</th></tr></thead>
+  <tbody>
+    <tr><td>0, no vibration</td><td><code>NORMAL</code></td><td>board at rest, sensor noise only (≈0.001 g RMS)</td><td><span class="led" style="--led:#1f9d47"></span>green</td></tr>
+    <tr><td>1, light vibration</td><td><code>TAPPING</code></td><td>short impulsive bursts (≈0.05 g RMS)</td><td><span class="led" style="--led:#e8b20c"></span>yellow</td></tr>
+    <tr><td>2, strong vibration</td><td><code>GENTLE_SHAKING</code></td><td>sustained large motion (≈0.13 g RMS)</td><td><span class="led" style="--led:#d63a2a"></span>red</td></tr>
+    <tr><td>unrecognized</td><td>—</td><td>classifier says level 0, autoencoder disagrees for 3 s</td><td><span class="led" style="--led:#3366e6"></span>blue</td></tr>
+  </tbody>
+</table></div>
+
+<div class="results" aria-label="Key results">
+  <div><strong>−93%</strong><span>classifier parameter memory (28.7 → 2.0 KB)</span></div>
+  <div><strong>100%</strong><span>held-out test windows after int8 quantization</span></div>
+  <div><strong>65 ms</strong><span>inference per 1 s window on the board</span></div>
+  <div><strong>34 / 34</strong><span>live windows matched the action (still, tap, shake)</span></div>
+</div>
+
+<figure>
+  <div class="plate"><img src="images/workflow.png" alt="Workflow: prepare own IMU data, train CNN and autoencoder, prune, project, quantize, generate C code, deploy" width="1607" height="260"></div>
+  <figcaption>The workflow is the same as in the first tutorial; only the data changes.</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><strong>Prepare Data</strong>: inspect the logger's timing, resample to a uniform 100 Hz grid, handle board orientation, and split by recording (<code>Part1_PrepareData.m</code>).</li>
+  <li><strong>Train Networks</strong>: compare against an RMS-threshold baseline, train the classifier and the autoencoder, and examine what the autoencoder finds (<code>Part2_TrainNetworks.m</code>).</li>
+  <li><strong>Compress Classifier</strong>: Taylor pruning and projection, each followed by fine-tuning (<code>Part3_CompressClassifier.m</code>).</li>
+  <li><strong>Quantize Networks</strong>: convert both networks to 8-bit integers (<code>Part4_QuantizeNetworks.m</code>).</li>
+  <li><strong>Generate Code</strong>: generate C code for the Arm Cortex-M4 and verify it against MATLAB (<code>Part5_GenerateCode.m</code>).</li>
+  <li><strong>Deploy to Arduino</strong>: build, flash, and test the monitor live (<code>Part6_DeployToArduino.m</code>).</li>
+</ol>
+
+<div class="req">
+  <p><b>Products:</b> Deep Learning Toolbox, Deep Learning Toolbox Model Compression Library, MATLAB Coder, MATLAB Coder Interface for Deep Learning, Embedded Coder, Fixed-Point Designer, Statistics and Machine Learning Toolbox. Signal Processing Toolbox is not required.</p>
+  <p><b>Hardware:</b> Arduino Nano 33 BLE Sense Rev1 (LSM9DS1 IMU); Arduino IDE 2 with the Arduino Mbed OS Nano Boards core and the Arduino_LSM9DS1 library.</p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<h2 id="step-1"><span class="num">1</span>Prepare Data</h2>
+
+<h3>About the Recordings</h3>
+<p>The data was logged from the board's LSM9DS1 IMU with the Arduino_LSM9DS1 library at a nominal 100 Hz: 15 recordings of 30 seconds for each class, one folder per class. Each row holds a microsecond timestamp, the acceleration in g, the angular rate in degrees per second, and the label.</p>
+<pre class="code"><code>head(readtable(fullfile(dataFolder,<span class="s">"NORMAL"</span>,<span class="s">"NORMAL_001.csv"</span>)),4)</code></pre>
+<pre class="out">    timestamp_us       ax           ay         az         gx         gy        gz        label
+    ____________    _________    ________    _______    _______    ______    ______    __________
+     1.1793e+08     -0.009888     0.01416    0.99499    0.67139    7.6904    1.5259    {'NORMAL'}
+     1.1794e+08     -0.009399    0.014771    0.99524    0.79346    7.3853    1.5259    {'NORMAL'}</pre>
+
+<h3>Check the Sampling</h3>
+<p>A real logger is never perfectly regular. Most sample intervals are 10 ms, but about 80 per recording are 20 ms, because the logger occasionally missed a sample.</p>
+<figure class="narrow">
+  <div class="plate"><img src="images/sampling-intervals.png" alt="Histogram of sampling intervals with peaks at 10 ms and 20 ms" width="839" height="530" loading="lazy"></div>
+  <figcaption>Time between consecutive samples in one recording.</figcaption>
+</figure>
+<p>The networks need evenly spaced samples, so <code>loadRecordings</code> uses the timestamps to interpolate each recording onto a uniform 100 Hz grid.</p>
+<pre class="code"><code>recordings = loadRecordings(dataFolder,100);</code></pre>
+<pre class="out">        Class         GroupCount    mean_Duration    sum_MissedSamples
+    ______________    __________    _____________    _________________
+    NORMAL                15           29.937              1192
+    TAPPING               15           29.941              1169
+    GENTLE_SHAKING        15           29.935              1181</pre>
+
+<h3>Look at the Signals</h3>
+<p>Tapping produces short spikes, and shaking produces large, continuous motion on both sensors. The mean of each channel is removed so that gravity and the gyroscope bias do not hide the motion.</p>
+<figure>
+  <div class="plate"><img src="images/signals.png" alt="Five seconds of acceleration and angular rate for each class" width="1237" height="936" loading="lazy"></div>
+  <figcaption>Acceleration and angular rate, one recording per class.</figcaption>
+</figure>
+
+<h3>Check the Board Orientation</h3>
+<p>The mean acceleration of a recording is the gravity vector, which shows how the board was oriented. The <code>NORMAL</code> recordings were made face up and face down, while the shaking recordings cover many angles.</p>
+<figure class="narrow">
+  <div class="plate"><img src="images/orientation.png" alt="3-D scatter of the gravity vector per recording, colored by class" width="856" height="659" loading="lazy"></div>
+  <figcaption>Board orientation per recording.</figcaption>
+</figure>
+<p>A network that saw the raw signal could learn the shortcut "tilted board means shaking", which would fail as soon as the board is mounted differently. Every feature in this example removes the mean of each window first, so the orientation cannot be used.</p>
+
+<h3>Split the Data by Recording</h3>
+<p>Use 9 recordings per class for training, 3 for validation, and 3 for testing. Windows from the same 30 s recording share orientation and handling, so splitting whole recordings, rather than windows, keeps the test honest.</p>
+<pre class="code"><code>recordingSplit = splitRecordings(recordings.Class,[9 3 3]);</code></pre>
+<p>Cut the recordings into one-second windows of 100 samples by 6 channels. Training windows overlap by 50%; validation and test windows do not overlap.</p>
+<pre class="out">numWindows =
+        1566         261         261</pre>
+
+<h3>Vibration Energy per Class</h3>
+<figure class="narrow">
+  <div class="plate"><img src="images/energy-peak.png" alt="Log-log scatter of RMS versus peak acceleration per window" width="833" height="679" loading="lazy"></div>
+  <figcaption>RMS and peak acceleration of every training window.</figcaption>
+</figure>
+<p>The classes are ordered by energy, but the tapping and shaking clusters touch, and at the same energy a tap has a higher peak than a shake. A single peak threshold would get the order wrong. A few <code>NORMAL</code> windows also reach about 0.03 g; they are examined in Step 2.</p>
+
+<!-- ============================================================ -->
+<h2 id="step-2"><span class="num">2</span>Train Networks</h2>
+
+<h3>Start with a Baseline</h3>
+<p>Before training a network, check what a simple rule achieves. A decision tree with two splits on the log RMS acceleration amounts to choosing two thresholds.</p>
+<pre class="code"><code>baseline = fitctree(log10(rmsOf(windowsTrain)),labelsTrain,MaxNumSplits=2);
+accuracyBaseline = 100*mean(predict(baseline,log10(rmsOf(windowsTest))) == labelsTest)</code></pre>
+<pre class="out">accuracyBaseline = 98.8506</pre>
+<p>Vibration energy alone separates most windows. Its three mistakes are vigorous taps classified as shaking: telling them apart needs the shape of the signal, an isolated impulse versus continuous motion.</p>
+
+<h3>Train the 1-D CNN Classifier</h3>
+<p>The classifier reads the mean-removed raw window, 100 time steps by 6 channels, scaled per channel. Global average pooling makes the prediction independent of where in the window a tap occurs.</p>
+<pre class="code"><code>layersCls = [
+    sequenceInputLayer(6,MinLength=100)
+    convolution1dLayer(5,16,Padding=<span class="s">"same"</span>)
+    batchNormalizationLayer
+    reluLayer
+    maxPooling1dLayer(2,Stride=2)
+    convolution1dLayer(5,32,Padding=<span class="s">"same"</span>)
+    batchNormalizationLayer
+    reluLayer
+    maxPooling1dLayer(2,Stride=2)
+    convolution1dLayer(3,32,Padding=<span class="s">"same"</span>)
+    batchNormalizationLayer
+    reluLayer
+    globalAveragePooling1dLayer
+    fullyConnectedLayer(32)
+    reluLayer
+    fullyConnectedLayer(3)
+    softmaxLayer];
+netCls = trainnet(XTrain,labelsTrain,layersCls,<span class="s">"crossentropy"</span>,optionsCls);
+accuracyCls = testnet(netCls,XTest,labelsTest,<span class="s">"accuracy"</span>,InputDataFormats=<span class="s">"TCB"</span>)</code></pre>
+<pre class="out">accuracyCls = 100</pre>
+<figure>
+  <div class="plate"><img src="images/confusion.png" alt="Confusion charts: RMS baseline misclassifies 3 taps as shaking; CNN classifies all windows correctly" width="1477" height="620" loading="lazy"></div>
+  <figcaption>Test set: RMS threshold baseline (left) and 1-D CNN (right).</figcaption>
+</figure>
+<p>The CNN also classifies the three boundary windows that the threshold got wrong. With only three test recordings per class, treat the exact percentage with care: it shows that the classes are well separated in new sessions, not that the model never makes a mistake.</p>
+
+<h3>Train the Autoencoder on NORMAL Windows</h3>
+<p>The autoencoder learns 24 motion indicators of an undisturbed board (log RMS, crest factor, kurtosis, and high-frequency energy fraction per channel) and reconstructs them through a 6-neuron bottleneck.</p>
+<pre class="code"><code>layersAE = [
+    featureInputLayer(24)
+    fullyConnectedLayer(32)
+    reluLayer
+    fullyConnectedLayer(6)
+    reluLayer
+    fullyConnectedLayer(32)
+    reluLayer
+    fullyConnectedLayer(24)];
+netAE = trainnet(ZTrain,ZTrain,layersAE,<span class="s">"mse"</span>,optionsAE);</code></pre>
+
+<h3>Choose a Robust Anomaly Threshold</h3>
+<p>Most <code>NORMAL</code> validation windows have a tiny reconstruction error, but a few are very large:</p>
+<pre class="out">prctile(scoreValNormal,[50 90 95 99]) =   0.1713    0.3543    2.5082   72.2752</pre>
+<p>A 99th-percentile threshold would be pulled up by these few windows. Instead, use the median plus five scaled median absolute deviations of the log score, which ignores a handful of outliers.</p>
+<pre class="code"><code>logScore = log10(scoreValNormal);
+aeThreshold = 10^(median(logScore) + 5*1.4826*mad(logScore,1))</code></pre>
+<pre class="out">aeThreshold = 1.5197</pre>
+
+<h3>Find What the Autoencoder Found</h3>
+<pre class="out">        Class         GroupCount    mean_Flagged
+    ______________    __________    ____________
+    NORMAL                87          0.091954
+    TAPPING               87                 1
+    GENTLE_SHAKING        87                 1</pre>
+<p>The autoencoder flags every tapping and shaking window, and also 8 windows inside <code>NORMAL</code> recordings.</p>
+<figure>
+  <div class="plate"><img src="images/bump.png" alt="Two NORMAL windows: one quiet, one with a small bump flagged by the autoencoder" width="1250" height="506" loading="lazy"></div>
+  <figcaption>A quiet NORMAL window (left) and a flagged NORMAL window (right).</figcaption>
+</figure>
+<div class="table-wrap"><table>
+  <thead><tr><th>NORMAL test windows</th><th class="num">Count</th><th class="num">Median peak</th></tr></thead>
+  <tbody>
+    <tr><td>Not flagged</td><td class="num">79</td><td class="num">0.0021 g</td></tr>
+    <tr class="best"><td>Flagged by the autoencoder</td><td class="num">8</td><td class="num">0.0304 g</td></tr>
+  </tbody>
+</table></div>
+<div class="callout">
+  <p>The flagged windows contain small real bumps, such as someone touching the table during a <code>NORMAL</code> recording. The labels describe a whole 30 s recording, but the autoencoder judges each second on its own and notices them. The classifier, trained on recording labels, calls these windows level 0; the autoencoder reports them as unrecognized vibration. This is what the hybrid design adds.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="step-3"><span class="num">3</span>Compress Classifier</h2>
+<p>Prune first, then project, and fine-tune after each step.</p>
+<pre class="code"><code>[netPruned,infoPruned] = compressNetworkUsingTaylorPruning(netCls,XTrain,TTrain,<span class="s">"crossentropy"</span>,optionsPruning, ...
+    LearnablesReductionGoal=0.5, ...
+    LearnablesReductionIncrement=0.05);</code></pre>
+<pre class="out">Compressed network has 50.1% fewer learnable parameters.
+Pruning compressed 5 layers: "conv1d_2","batchnorm_2","conv1d_3","batchnorm_3","fc_1"</pre>
+<pre class="code"><code>[netProjected,infoProjected] = compressNetworkUsingProjection(netPruned,XTrain, ...
+    InputDataFormats=<span class="s">"TCB"</span>, ...
+    LearnablesReductionGoal=0.5);</code></pre>
+<pre class="out">Compressed network has 50.2% fewer learnable parameters.
+Projection compressed 4 layers: "conv1d_2","conv1d_3","fc_1","fc_2"</pre>
+<div class="table-wrap"><table>
+  <thead><tr><th>Stage</th><th class="num">Learnables</th><th class="num">Memory</th><th class="num">Test accuracy</th></tr></thead>
+  <tbody>
+    <tr><td>Original</td><td class="num">7,347</td><td class="num">28.7 KB</td><td class="num">100%</td></tr>
+    <tr><td>Pruned</td><td class="num">3,636</td><td class="num">14.2 KB</td><td class="num">100%</td></tr>
+    <tr><td>Pruned + projected</td><td class="num">1,745</td><td class="num">6.8 KB</td><td class="num">100%</td></tr>
+  </tbody>
+</table></div>
+<figure>
+  <div class="plate"><img src="images/compression-stages.png" alt="Learnables and accuracy after each compression step" width="1188" height="530" loading="lazy"></div>
+  <figcaption>Network size and accuracy after each compression step.</figcaption>
+</figure>
+<p>Because the classes are well separated, the network keeps its accuracy after a 76% reduction in learnables.</p>
+
+<!-- ============================================================ -->
+<h2 id="step-4"><span class="num">4</span>Quantize Networks</h2>
+<pre class="code"><code>quantObjCls = dlquantizer(netClsCompressed,ExecutionEnvironment=<span class="s">"MATLAB"</span>);
+prepareNetwork(quantObjCls);
+calibrate(quantObjCls,arrayDatastore(XTrain(1:3:end),OutputType=<span class="s">"same"</span>));
+netClsQ = quantize(quantObjCls,ExponentScheme=<span class="s">"histogram"</span>);</code></pre>
+<p>Quantize the autoencoder the same way and recompute the robust threshold with the quantized network (<code>aeThreshold = 1.4048</code>). The quantized autoencoder flags the same windows.</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>Stage</th><th class="num">Learnables</th><th class="num">Parameter memory</th><th class="num">Test accuracy</th></tr></thead>
+  <tbody>
+    <tr><td>Original (float32)</td><td class="num">7,347</td><td class="num">28.7 KB</td><td class="num">100%</td></tr>
+    <tr><td>Pruned + projected (float32)</td><td class="num">1,745</td><td class="num">6.8 KB</td><td class="num">100%</td></tr>
+    <tr class="best"><td>Pruned + projected + quantized (int8)</td><td class="num">1,705</td><td class="num">2.0 KB</td><td class="num">100%</td></tr>
+  </tbody>
+</table></div>
+<figure>
+  <div class="plate"><img src="images/memory.png" alt="Classifier parameter memory from 28.7 KB to 2.0 KB" width="934" height="578" loading="lazy"></div>
+  <figcaption>Classifier parameter memory across the workflow.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="step-5"><span class="num">5</span>Generate Code</h2>
+<p>The entry-point function <code>vibrationSeverityDetect</code> takes one 100-by-6 window and returns the level, the three class probabilities, the autoencoder score, and the unrecognized flag.</p>
+<pre class="code"><code><span class="k">function</span> [level,probabilities,aeScore,isUnrecognized] = vibrationSeverityDetect(window) <span class="c">%#codegen</span>
+<span class="k">persistent</span> netCls netAE
+<span class="k">if</span> isempty(netCls)
+    netCls = coder.loadDeepLearningNetwork(<span class="s">"models/netClsQ.mat"</span>);
+    netAE = coder.loadDeepLearningNetwork(<span class="s">"models/netAEQ.mat"</span>);
+<span class="k">end</span>
+params = coder.load(<span class="s">"models/deploymentParams.mat"</span>);
+
+x = (single(window) - mean(single(window),1)) ./ params.channelScale;
+probabilities = extractdata(predict(netCls,dlarray(reshape(x',6,1,100),<span class="s">"CBT"</span>)));
+[~,k] = max(probabilities);
+level = int32(k - 1);
+
+ci = (computeMotionIndicators(window) - params.ciMu) ./ params.ciSigma;
+ciHat = extractdata(predict(netAE,dlarray(ci',<span class="s">"CB"</span>)));
+aeScore = mean((ciHat - ci').^2);
+
+isUnrecognized = level == 0 &amp;&amp; aeScore &gt; params.aeThreshold;
+<span class="k">end</span></code></pre>
+<p>The code generation settings are the same as in the first tutorial: <code>TargetLibrary="none"</code>, <code>LargeConstantGeneration="KeepInSourceFiles"</code>, no dynamic memory, and the <code>ARM Cortex-M</code> device type. Verify the generated code with a MEX function on all 261 test windows:</p>
+<pre class="out">levelAgreement = 1
+medianRelativeDifferenceScore = 1.4674e-07
+flagAgreement = 1</pre>
+<pre class="code"><code><span class="k">extern void</span> vibrationSeverityDetect(<span class="k">const float</span> window[600], <span class="k">int</span> *level,
+                                    <span class="k">float</span> probabilities[3], <span class="k">float</span> *aeScore,
+                                    <span class="k">bool</span> *isUnrecognized);</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="step-6"><span class="num">6</span>Deploy to Arduino</h2>
+<p>The sketch <code>arduino/VibrationSeverityMonitor/VibrationSeverityMonitor.ino</code> keeps the Arduino_LSM9DS1 library's default settings (119 Hz output data rate, ±4 g, ±2000 °/s), which match the recordings, and samples acceleration and angular rate every 10 ms. It shows blue only after <strong>3 consecutive</strong> unrecognized windows, so a single small bump, such as a knock on the desk or a touch on the USB cable, does not make the LED flicker. Change <code>kUnrecognizedWindows</code> to adjust this.</p>
+<pre class="code"><code>unrecognizedCount = isUnrecognized ? unrecognizedCount + 1 : 0;
+<span class="k">int</span> state = (unrecognizedCount &gt;= kUnrecognizedWindows) ? 3 : level;</code></pre>
+<pre class="out">Sketch uses 112256 bytes (11%) of program storage space. Maximum is 983040 bytes.
+Global variables use 48344 bytes (18%) of dynamic memory, leaving 213800 bytes for local variables. Maximum is 262144 bytes.</pre>
+
+<h3>Test the Monitor Live</h3>
+<p>With the board flashed, the board was left still, then tapped, then shaken gently, then left still again, while MATLAB read the serial output.</p>
+<figure>
+  <div class="plate"><img src="images/board-live.png" alt="Live run: level steps from 0 to 1 to 2 and back to 0, markers colored by LED; autoencoder score per window" width="1285" height="771" loading="lazy"></div>
+  <figcaption>Live run on the board. Marker color shows the LED.</figcaption>
+</figure>
+<div class="table-wrap"><table>
+  <thead><tr><th>Phase</th><th class="num">Windows</th><th>Board output</th></tr></thead>
+  <tbody>
+    <tr><td>Still</td><td class="num">5</td><td><span class="led" style="--led:#1f9d47"></span>level 0</td></tr>
+    <tr><td>Tapping</td><td class="num">10</td><td><span class="led" style="--led:#e8b20c"></span>level 1</td></tr>
+    <tr><td>Shaking</td><td class="num">9</td><td><span class="led" style="--led:#d63a2a"></span>level 2</td></tr>
+    <tr><td>Still</td><td class="num">10</td><td><span class="led" style="--led:#1f9d47"></span>level 0</td></tr>
+  </tbody>
+</table></div>
+<p>The classifier tracked every phase, with a confidence of 0.98–0.996 on all windows except the one where tapping started partway through (0.65). The autoencoder score rose above the threshold in five windows where the classifier reported level 0: two as a hand approached the board, two while the board settled after shaking, and one small bump. None lasted three windows, so the LED stayed green. Inference takes 65 ms per window on the 64 MHz Cortex-M4F.</p>
+
+<!-- ============================================================ -->
+<h2 id="next" class="keep">Next Steps</h2>
+<ul>
+  <li>Add a level by recording 15 sessions of a new condition, for example a fan or phone vibrating under the board, and adding a class in Step 2.</li>
+  <li>Reduce the delay by sampling into a second buffer while the detector runs, so that windows can overlap.</li>
+  <li>Report the level over Bluetooth Low Energy with the ArduinoBLE library.</li>
+</ul>
+
+<h2 id="files" class="keep">Supporting Files</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>File</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>helpers/loadRecordings.m</code></td><td>Load the CSV recordings and resample them onto a uniform grid</td></tr>
+    <tr><td><code>helpers/makeWindows.m</code></td><td>Cut recordings into fixed-length windows, keeping the recording index</td></tr>
+    <tr><td><code>helpers/splitRecordings.m</code></td><td>Stratified train/validation/test split by recording</td></tr>
+    <tr><td><code>helpers/computeMotionIndicators.m</code></td><td>24 motion indicators per window (supports code generation)</td></tr>
+    <tr><td><code>helpers/autoencoderScore.m</code></td><td>Mean squared reconstruction error</td></tr>
+    <tr><td><code>helpers/networkSummary.m</code></td><td>Learnables and parameter memory of a network</td></tr>
+    <tr><td><code>codegen/vibrationSeverityDetect.m</code></td><td>Entry-point function for code generation</td></tr>
+    <tr><td><code>arduino/VibrationSeverityMonitor/</code></td><td>Arduino sketch; the generated C code is copied to <code>src/model/</code></td></tr>
+    <tr><td><code>data/raw/Vibration_Dataset/</code></td><td>The 45 recordings (NORMAL, TAPPING, GENTLE_SHAKING)</td></tr>
+  </tbody>
+</table></div>
+
+<h3>See Also</h3>
+<p class="seealso"><code>interp1</code> · <code>fitctree</code> · <code>trainnet</code> · <code>testnet</code> · <code>compressNetworkUsingTaylorPruning</code> · <code>compressNetworkUsingProjection</code> · <code>dlquantizer</code> · <code>estimateNetworkMetrics</code> · <code>mad</code> · <code>codegen</code> · <code>coder.loadDeepLearningNetwork</code> · <code>serialport</code></p>
+
+<h3>Related Examples</h3>
+<ul>
+  <li><a href="../01-vibration-anomaly-detection/README.md">Tutorial 1: Train, Compress, and Deploy a Vibration Anomaly Detector</a></li>
+  <li><a href="https://www.mathworks.com/help/deeplearning/ug/train-and-compress-ai-model-for-road-damage-detection.html">Train and Compress AI Model for Road Damage Detection</a></li>
+  <li><a href="https://www.mathworks.com/help/deeplearning/ug/analyze-and-compress-1d-convolutional-neural-network.html">Analyze and Compress 1-D Convolutional Neural Network</a></li>
+  <li><a href="https://www.mathworks.com/help/coder/ug/generate-generic-cc-code-for-deep-learning-networks.html">Generate Generic C/C++ Code for Deep Learning Networks</a></li>
+  <li><a href="https://www.mathworks.com/help/deeplearning/ug/out-of-distribution-detection-for-deep-neural-networks.html">Out-of-Distribution Detection for Deep Neural Networks</a></li>
+</ul>
+
+<footer>Results from a full run on MATLAB R2026b with an Arduino Nano 33 BLE Sense Rev1, using data recorded on the same board. This is an independent tutorial and is not affiliated with MathWorks or Arduino. MATLAB is a registered trademark of The MathWorks, Inc.; Arduino is a registered trademark of Arduino S.r.l.</footer>
+</main>
+</div>

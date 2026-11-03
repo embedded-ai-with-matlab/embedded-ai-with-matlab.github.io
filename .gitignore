@@ -1,0 +1,12 @@
+/_site/
+/.quarto/
+/.quarto-cache/
+**/.DS_Store
+**/slprj/
+**/codegen/build/
+**/codegen/mex/
+**/models/*.mat
+**/data/preparedData.mat
+**/*.asv
+**/*.mex*
+**/*~

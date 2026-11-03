@@ -1,0 +1,9 @@
+# Preface {.unnumbered}
+
+Embedded AI combines sensing, signal processing, machine learning, software deployment, and system measurement. A high test accuracy does not imply a successful embedded implementation: the sensor distribution, RAM and Flash budgets, model execution time, and inference energy all matter. This book uses MATLAB to connect those decisions into a single engineering workflow.
+
+The instructional pattern is **question → sensor data → MATLAB implementation → evaluation → optimization → hardware verification**. Foundational concepts precede toolbox-specific details, but each chapter stays connected to practical MATLAB code. MATLAB Live Editor and script-based examples complement the Quarto pages; these pages do not execute MATLAB during site builds.
+
+Students may follow the core software exercises without hardware. Additional challenges deploy algorithms to supported devices and measure real performance. Hardware compatibility, product versions, and availability must always be checked against the relevant MathWorks release documentation.
+
+The first lab adapts the accompanying vibration-severity-monitor project supplied for this course. It intentionally separates exploratory analysis from neural-network compression and deployment so the first session has a manageable scope.

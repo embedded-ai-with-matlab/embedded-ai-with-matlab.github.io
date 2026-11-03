@@ -1,0 +1,9 @@
+/*-- scss:defaults --*/
+$primary: #175c82;
+$link-color: #175c82;
+$font-family-sans-serif: "Source Sans 3", "Segoe UI", sans-serif;
+/*-- scss:rules --*/
+.quarto-title-block .title { font-weight: 750; letter-spacing: -.035em; }
+.sidebar-title {font-weight: 700;}
+.callout { border-radius: .5rem; }
+code { font-size: .92em; }

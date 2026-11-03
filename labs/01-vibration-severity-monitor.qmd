@@ -1,0 +1,207 @@
+# Lab 1 — Vibration Severity Monitoring with MATLAB
+
+::: {.callout-important title="What you will do"}
+Work with **real IMU measurements from an Arduino Nano 33 BLE Sense Rev1** to inspect sampling quality, visualize motion, generate recording-independent splits, and compare a simple classification baseline. No physical device is needed for the core lab. An optional extension follows the original full MATLAB tutorial through model compression and Arduino deployment.
+:::
+
+## Learning objectives
+
+By the end of this lab, you should be able to:
+
+1. import and interpret six-channel IMU CSV recordings in MATLAB;
+2. diagnose uneven sampling using microsecond timestamps;
+3. compute windowed acceleration RMS after removing the mean;
+4. explain why splitting by recording prevents leakage;
+5. execute the provided preprocessing pipeline and interpret its outputs;
+6. train and evaluate a shallow decision-tree baseline, with suitable limitations.
+
+## Estimated time
+
+**2–3 hours** for the core lab; additional sessions for optional neural network training, quantization, code generation, and deployment.
+
+## Requirements
+
+**Core lab:** MATLAB and **Statistics and Machine Learning Toolbox** for `fitctree`. Basic reading, plotting, and feature calculations require only MATLAB. The original project's `Part1_PrepareData.m` uses helper functions included in this repository. A computer with the repository extracted is sufficient.
+
+**Optional complete workflow:** Deep Learning Toolbox, Deep Learning Toolbox Model Compression Library, MATLAB Coder, MATLAB Coder Interface for Deep Learning, Embedded Coder, Fixed-Point Designer, the compatible support stack described by the original example, and a Nano 33 BLE Sense **Rev1 (LSM9DS1)** board for the deployment phase. This is release-sensitive; see the [project README](../matlab/projects/vibration-severity-monitor/README.md).
+
+## Background: the supplied experiment
+
+The dataset includes **45 recordings**, organized in three class folders:
+
+| Folder | Condition | Recordings |
+|---|---|---:|
+| `NORMAL` | Board at rest | 15 |
+| `TAPPING` | Light impulsive tapping | 15 |
+| `GENTLE_SHAKING` | Sustained manual shaking | 15 |
+
+Every recording is approximately 30 seconds. Each CSV row includes `timestamp_us`, acceleration (`ax`, `ay`, `az` in g), angular rate (`gx`, `gy`, `gz` in degrees/s), and `label`. The sampling target is approximately **100 Hz**, but some logger intervals are longer. These are teaching classes for activity/vibration *conditions*, not ISO machine-severity grades. Data came from the same sensor family used by the target firmware, which reduces a major source of domain shift compared with training on an unrelated sensor.
+
+![Included full project workflow. The core first lab covers the dataset and baseline stages.](../matlab/projects/vibration-severity-monitor/images/workflow.png){#fig-lab1-workflow width=93%}
+
+## Research question and hypothesis
+
+**Research question:** Can a very small classifier distinguish rest, tapping, and shaking from one-second IMU measurements, and how should we evaluate it without leakage between recording sessions?
+
+**Hypothesis (write yours before running):** Mean-centered acceleration RMS will separate most windows, but brief taps and sustained shaking may overlap in amplitude. A learned classifier that uses temporal structure could improve their discrimination.
+
+## Step 1 — Inspect the files
+
+Open MATLAB in the repository root and define the tutorial location:
+
+```{.matlab}
+repoRoot = pwd;
+projectRoot = fullfile(repoRoot,"matlab","projects","vibration-severity-monitor");
+dataRoot = fullfile(projectRoot,"data","raw","Vibration_Dataset");
+file = fullfile(dataRoot,"NORMAL","NORMAL_001.csv");
+T = readtable(file);
+head(T,5)
+```
+
+Check the variable names, class label, and total sample count:
+
+```{.matlab}
+disp(T.Properties.VariableNames)
+fprintf("Rows: %d\n",height(T))
+```
+
+**Record:** filename, class label, number of rows, duration in seconds, and mean accelerometer magnitude. Do not assume every recording contains precisely 3000 samples.
+
+## Step 2 — Examine sampling quality
+
+Convert microsecond time stamps to relative seconds and inspect their gaps:
+
+```{.matlab}
+t = (double(T.timestamp_us)-double(T.timestamp_us(1)))/1e6;
+dt = diff(t);
+fprintf("Median dt: %.2f ms\n",1000*median(dt));
+fprintf("Maximum dt: %.2f ms\n",1000*max(dt));
+figure; histogram(1000*dt,40)
+xlabel("Sample interval (ms)"); ylabel("Count"); grid on
+```
+
+The supplied tutorial reports that some time intervals are approximately 20 ms rather than the nominal 10 ms. You must verify their prevalence in your selected recording. A uniformly spaced array is important for later spectral calculations. The project helper resamples using interpolation; resampling does not restore unobserved transients.
+
+**Questions:** What fraction of intervals exceed 15 ms? Could occasional missing samples cause misleading peak or spectral estimates?
+
+## Step 3 — Inspect and compare signals
+
+Load a tapping recording and plot the three acceleration channels:
+
+```{.matlab}
+T = readtable(fullfile(dataRoot,"TAPPING","TAPPING_001.csv"));
+t = (double(T.timestamp_us)-double(T.timestamp_us(1)))/1e6;
+figure; plot(t,[T.ax T.ay T.az])
+legend("a_x","a_y","a_z"); xlabel("Time (s)"); ylabel("g"); grid on
+```
+
+![The example signals show rest, impacts, and sustained motion.](../matlab/projects/vibration-severity-monitor/images/signals.png){#fig-lab1-signals width=90%}
+
+Calculate the mean-removed acceleration magnitude and RMS:
+
+```{.matlab}
+a = [T.ax T.ay T.az];
+aCentered = a - mean(a,1);
+instantaneousMotion = sqrt(sum(aCentered.^2,2));
+rmsG = sqrt(mean(instantaneousMotion.^2));
+peakG = max(instantaneousMotion);
+crestFactor = peakG/max(rmsG,eps);
+fprintf("RMS %.4f g, peak %.4f g, crest %.2f\n", ...
+    rmsG,peakG,crestFactor)
+```
+
+**Deliverable:** A comparison of RMS and crest factor for at least one recording in each condition. Explain why mean subtraction is performed and where it may fail (for example, continuous orientation changes during motion).
+
+## Step 4 — Load all recordings on a uniform grid
+
+The helper `loadRecordings` reads each CSV file and interpolates six channels onto a uniform 100 Hz time grid:
+
+```{.matlab}
+addpath(fullfile(projectRoot,"helpers"));
+recordings = loadRecordings(string(dataRoot),100);
+summary(recordings.Class)
+```
+
+Each row in the resulting table represents a *recording*, not a window. Other columns include `Signal` (an `N × 6` matrix), `Duration`, `MissedSamples`, and the recording's mean acceleration vector. Inspect the total number of recordings; there should be 45.
+
+**Quality check:** identify which recording had the most missing samples, and report the median duration in each class.
+
+## Step 5 — Split by recording, not by window
+
+Training and testing on windows extracted from the same physical session can artificially inflate accuracy. The attached project uses a **9/3/3 split per class**:
+
+```{.matlab}
+recordingSplit = splitRecordings(recordings.Class,[9 3 3]);
+summary(recordingSplit)
+```
+
+The exact split helper is in the attachment and should be used with the included code. Explain why overlapping one-second windows are especially likely to leak information if a window-level random split is made first.
+
+## Step 6 — Run the complete preprocessing script
+
+Open `Part1_PrepareData.m` in the MATLAB editor and run it as a script. It uses the supplied helper functions to resample, split recordings, create one-second windows of **100 × 6** samples, center the channels, and save the training/validation/test data:
+
+```{.matlab}
+run(fullfile(projectRoot,"Part1_PrepareData.m"));
+```
+
+The script writes `data/preparedData.mat`. The original example reports approximately **1566 training, 261 validation, and 261 test windows** for its saved split; verify the actual results for your run. Some values can vary if the split implementation or the source files change.
+
+![The original project visualizes the RMS and peak feature distributions.](../matlab/projects/vibration-severity-monitor/images/energy-peak.png){#fig-lab1-energy width=85%}
+
+## Step 7 — Train a simple decision-tree baseline
+
+Load the saved window data, then inspect the variables created by the provided script:
+
+```{.matlab}
+S = load(fullfile(projectRoot,"data","preparedData.mat"));
+whos('-file',fullfile(projectRoot,"data","preparedData.mat"))
+```
+
+The attached `Part2_TrainNetworks.m` implements the reference baseline before training a CNN. For convenience, the accompanying `matlab/labs/01-vibration-baseline.m` provides an independent classifier from the saved `windowsTrain`, `windowsTest`, `labelsTrain`, and `labelsTest` objects. Run:
+
+```{.matlab}
+run(fullfile(repoRoot,"matlab","labs","01-vibration-baseline.m"));
+```
+
+The `repoRoot` variable is captured in Step 1 before `Part1_PrepareData.m` changes the working directory. The baseline script also derives its own root from its file location. The script deliberately uses just **centered acceleration RMS** as its feature, log-transforms it, and fits a shallow decision tree. The three conditions are automatically converted to categorical labels by the source preparation script.
+
+**Do not quote the accuracy from the supplied tutorial as your own result.** The attachment reports **98.85% baseline test accuracy** for its own split, but you should calculate yours, provide a confusion chart, and explain the number of independently sampled test *sessions*.
+
+## Step 8 — Interpret results
+
+Create a short table with the held-out test accuracy for the baseline and a class-by-class confusion matrix. Answer these questions:
+
+1. Why can a very small classifier be sufficient for some embedded applications?
+2. Which classes are confused, and how does that relate to impulsive versus sustained motion?
+3. What experiment would test generalization to a different mounting angle or a different Arduino?
+4. Why can a reported 100% accuracy on a handful of held-out recordings be misleading?
+5. How does a one-second sampling window constrain detection latency?
+
+## Optional extension — MATLAB training to live Arduino inference
+
+The original project includes an advanced end-to-end demonstration that builds on this lab:
+
+| Stage | Supplied MATLAB file | Purpose |
+|---|---|---|
+| 1 | `Part1_PrepareData.m` | Session-based split and windowing |
+| 2 | `Part2_TrainNetworks.m` | 1-D CNN and normal-data autoencoder |
+| 3 | `Part3_CompressClassifier.m` | Classifier pruning and projection |
+| 4 | `Part4_QuantizeNetworks.m` | 8-bit quantization |
+| 5 | `Part5_GenerateCode.m` | Generate compatible C/C++ and compare outputs |
+| 6 | `Part6_DeployToArduino.m` | Compile, flash, and profile board inference |
+
+**Caution:** `Part6_DeployToArduino.m` contains a macOS-specific path for `arduino-cli`. Set it appropriately for your computer. Run the stages in sequence; the later scripts expect MAT files generated by earlier scripts. The Arduino sketch imports generated headers from `src/model/`, which will not exist until code generation completes. The firmware specifically uses `Arduino_LSM9DS1` for the Rev1 board. The provided tutorial reports an int8 classifier and latency metrics, but the hardware measurements are not independently verified by this course release.
+
+## Submission checklist
+
+- A table with class counts and recording durations.
+- A plot of timestamp intervals and two representative six-channel signals.
+- RMS and crest-factor calculations for three conditions.
+- A description of the recording-wise train/validation/test split.
+- MATLAB baseline classifier code, confusion chart, and held-out accuracy.
+- One page of interpretation, limitations, and next experiments.
+
+## Extension challenge
+
+Collect five new recordings per class with a **different mounting orientation**, without adding them to training. Evaluate the baseline on these independently collected sessions and explain any performance drop. Keep sensor settings, measurement units, and preprocessing consistent so the comparison is meaningful.

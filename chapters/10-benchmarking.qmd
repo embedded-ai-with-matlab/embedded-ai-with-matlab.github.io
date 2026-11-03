@@ -1,0 +1,25 @@
+# Benchmarking Embedded AI with MATLAB
+
+::: {.callout-note title="Planned chapter"}
+This chapter is a **teaching outline**, not yet a complete lesson. Chapter 1 and Lab 1 are the initial finished materials.
+:::
+
+## Learning objectives
+
+- Apply MATLAB to measure latency, memory, throughput, energy, and predictive quality.
+- Build and interpret an experiment relevant to embedded constraints.
+- Identify software, target-hardware, and reproducibility requirements.
+
+## MATLAB workflow (planned)
+
+The chapter will introduce a reproducible example, train or implement a baseline where appropriate, perform a controlled comparison, and explain how the results affect embedded deployment.
+
+## Experimental investigation (planned)
+
+Students will vary one design choice, record metrics and a MATLAB plot, and discuss limitations. Future lab materials will provide the runnable scripts.
+
+## Exercises (planned)
+
+1. Explain the core system design trade-off in your own words.
+2. Implement or adapt a MATLAB example related to the chapter.
+3. Report predictive and resource metrics, distinguishing measured from estimated values.

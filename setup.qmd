@@ -1,0 +1,32 @@
+# Environment Setup {.unnumbered}
+
+## Software
+
+- MATLAB (a recent compatible release; the supplied training project uses modern `trainnet`/`dlnetwork` APIs).
+- For Lab 1: MATLAB and **Statistics and Machine Learning Toolbox** for the baseline decision tree; plotting and CSV import use MATLAB core features. Other supplied scripts require further products as specified in the project README.
+- For the advanced full project: **Deep Learning Toolbox**, **Deep Learning Toolbox Model Compression Library**, **MATLAB Coder**, **MATLAB Coder Interface for Deep Learning**, **Embedded Coder**, **Fixed-Point Designer**, and **Statistics and Machine Learning Toolbox**. Requirements may depend on release.
+- For hardware: **Arduino IDE 2**, **Arduino Mbed OS Nano Boards** core, **Arduino_LSM9DS1** library, and a Nano 33 BLE Sense **Rev1**.
+- Quarto CLI for generating the book. PDF additionally requires a suitable TeX distribution with LuaLaTeX.
+
+## Run the first lab
+
+```matlab
+root = fullfile(pwd,"matlab","projects","vibration-severity-monitor");
+addpath(fullfile(root,"helpers"));
+run(fullfile(root,"Part1_PrepareData.m"));
+```
+
+The supplied Part 1 script sets its own project directory. It writes generated data to `data/preparedData.mat` (ignored by Git).
+
+## Build this website
+
+```bash
+quarto render --to html
+quarto preview
+```
+
+For the full PDF edition (requires LuaLaTeX), use `quarto render --to pdf`. The book site is published using GitHub Actions and GitHub Pages.
+
+## Practical validation
+
+GitHub Actions checks Quarto rendering, not the proprietary MATLAB runtime or a connected board. MATLAB and embedded outcomes reported in the sample tutorial must be reproduced locally with compatible toolboxes and hardware.

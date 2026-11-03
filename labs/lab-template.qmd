@@ -1,0 +1,34 @@
+# Lab Template
+
+## Learning objectives
+
+- Objective 1.
+- Objective 2.
+
+## Prerequisites and estimated time
+
+List MATLAB release, toolboxes, board and sensor revisions, required files, and duration. Provide a hardware-free option when possible.
+
+## Research question and hypothesis
+
+State an explicit experimentally testable question. Record the predicted outcome before running the code.
+
+## Setup and data provenance
+
+Document sensor settings, dataset source, label definitions, physical mounting, random seed, and splitting rule.
+
+## Guided MATLAB implementation
+
+Include executable `.m` or `.mlx` file references. Keep classroom-grade snippets small and reproducible.
+
+## Controlled experiment
+
+Change one factor and report predictive performance plus the relevant embedded system metric.
+
+## Results and interpretation
+
+Include a table, a figure, limitations, and possible confounding factors.
+
+## Deliverables and extension challenge
+
+Specify code, figure, result table, and short explanation.

@@ -1,0 +1,20 @@
+# Weekly Laboratory Plan
+
+The course includes **12 planned weekly labs**. Lab 1 is implemented; the remaining labs are provisional plans and will be published with runnable MATLAB code as developed.
+
+| Week | MATLAB lab | Intended output |
+|---|---|---|
+| 1 | Vibration recording analysis and baseline classifier | plots, recording-wise split, metrics |
+| 2 | Live IMU data acquisition | sensor stream and timing diagnostic |
+| 3 | Signal filtering and feature engineering | window features and frequency plots |
+| 4 | Classical machine learning for sensor data | classifier comparison |
+| 5 | Deep learning for time-series data | trained compact network |
+| 6 | Time-series anomaly detection | novelty scores and evaluation |
+| 7 | Quantization and model compression | accuracy-versus-memory study |
+| 8 | Supported MATLAB code generation | host-versus-generated tests |
+| 9 | Nano 33 BLE Sense on-device inference | sensor + model + LED pipeline |
+| 10 | Supported Raspberry Pi workflow | edge application |
+| 11 | Memory, latency and energy benchmarking | performance report |
+| 12 | End-to-end Embedded AI capstone | reproducibility package |
+
+For each lab, record MATLAB/toolbox versions, operating system, hardware revision, sample rate, train/test separation, and any generated model/code versions.
