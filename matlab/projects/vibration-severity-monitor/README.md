@@ -2,7 +2,7 @@
 
 This example shows how to train, compress, and deploy a vibration severity monitor using data recorded with the same Arduino® Nano 33 BLE Sense that runs the model. Every second, the board reports whether it is still, vibrating lightly, or vibrating strongly, and flags vibration it does not recognize.
 
-In the [first tutorial](../01-vibration-anomaly-detection/README.md), the detector was trained on a public ceiling-fan dataset. On the board it reported every window as unknown, because the board and its surroundings looked nothing like the training data. This *domain shift* is the most common reason embedded AI models fail in the field. This example removes it by training on 45 recordings made with the board's own LSM9DS1 IMU. The deployed model reads exactly the sensor and settings it was trained on.
+In the [first tutorial](https://github.com/samy101/embedded-ai-with-matlab/tree/main/01-vibration-anomaly-detection), the detector was trained on a public ceiling-fan dataset. On the board it reported every window as unknown, because the board and its surroundings looked nothing like the training data. This *domain shift* is the most common reason embedded AI models fail in the field. This example removes it by training on 45 recordings made with the board's own LSM9DS1 IMU. The deployed model reads exactly the sensor and settings it was trained on.
 
 The board reports three vibration levels, similar to the severity zones used in machine-condition monitoring:
 
@@ -21,13 +21,19 @@ The example consists of these steps:
 
 1. **Prepare Data**: inspect the logger's timing, resample to a uniform 100 Hz grid, handle board orientation, and split by recording (`Part1_PrepareData.m`).
 2. **Train Networks**: compare against an RMS-threshold baseline, train the classifier and the autoencoder, and examine what the autoencoder finds (`Part2_TrainNetworks.m`).
-3. **Compress Classifier**: Taylor pruning and projection, each followed by fine-tuning (`Part3_CompressClassifier.m`).
+3. **Compress Classifier**: Taylor pruning and projection, each followed by fine-tuning (`Part3_CompressClassifier.m`). Optionally, first explore how far each technique can go (`Part3a_ExploreCompression.m`).
 4. **Quantize Networks**: convert both networks to 8-bit integers (`Part4_QuantizeNetworks.m`).
 5. **Generate Code**: generate C code for the Arm® Cortex®-M4 and verify it against MATLAB (`Part5_GenerateCode.m`).
 6. **Deploy to Arduino**: build, flash, and test the monitor live (`Part6_DeployToArduino.m`).
 
-**Products required:** Deep Learning Toolbox™, Deep Learning Toolbox Model Compression Library, MATLAB Coder™, MATLAB Coder Interface for Deep Learning, Embedded Coder®, Fixed-Point Designer™, and Statistics and Machine Learning Toolbox™. Signal Processing Toolbox is not required.
-**Hardware required:** Arduino Nano 33 BLE Sense Rev1 (LSM9DS1 IMU) and Arduino IDE 2 with the *Arduino Mbed OS Nano Boards* core and the *Arduino_LSM9DS1* library.
+> [!NOTE]
+> **Products required:** Deep Learning Toolbox™, Deep Learning Toolbox Model Compression Library, MATLAB Coder™, MATLAB Coder Interface for Deep Learning, Embedded Coder®, Fixed-Point Designer™, and Statistics and Machine Learning Toolbox™. Signal Processing Toolbox is not required.
+
+> [!IMPORTANT]
+> **Hardware required:** Arduino Nano 33 BLE Sense Rev1 (LSM9DS1 IMU) and Arduino IDE 2 with the *Arduino Mbed OS Nano Boards* core and the *Arduino_LSM9DS1* library.
+
+> [!TIP]
+> **Optional:** Simulink® is used only to export the networks as Simulink models in Step 2.
 
 ---
 
@@ -155,6 +161,14 @@ accuracyCls = 100
 
 ![Confusion charts](images/confusion.png)
 
+The helper function `plotNetworkArchitecture` draws each layer as a box whose color shows the layer type and whose height grows with the number of channels. The output size of each layer is printed below it. Max pooling halves the time axis twice, from 100 to 25 steps, and global average pooling collapses it, so the fully connected layers see a single 32-element summary of the whole second.
+
+```matlab
+plotNetworkArchitecture(netCls,[100 6],"Classifier: 1-D CNN on the 100 × 6 IMU window");
+```
+
+![Classifier architecture](images/architecture-classifier.png)
+
 The CNN also classifies the three boundary windows that the threshold got wrong. With only three test recordings per class, treat the exact percentage with care: it shows that the classes are well separated in new sessions, not that the model never makes a mistake.
 
 ### Train the Autoencoder on NORMAL Windows
@@ -173,6 +187,8 @@ layersAE = [
     fullyConnectedLayer(24)];
 netAE = trainnet(ZTrain,ZTrain,layersAE,"mse",optionsAE);
 ```
+
+![Autoencoder architecture](images/architecture-autoencoder.png)
 
 ### Choose a Robust Anomaly Threshold
 
@@ -216,9 +232,57 @@ The autoencoder flags every tapping and shaking window, and also 8 windows insid
 
 The flagged windows contain small real bumps, such as someone touching the table during a `NORMAL` recording. The labels describe a whole 30 s recording, but the autoencoder judges each second on its own and notices them. The classifier, trained on recording labels, calls these windows level 0; the autoencoder reports them as unrecognized vibration. This is what the hybrid design adds.
 
+### Export Networks to Simulink
+
+`exportNetworkToSimulink` converts a network into a Simulink® model with one block per layer. With `FrameBased=true`, the model takes a whole 100-by-6 window at each time step, which the max pooling layers need. You can also inspect the networks interactively with `analyzeNetwork(netCls)`.
+
+```matlab
+exportNetworkToSimulink(netCls,ModelName="vibrationSeverityClassifier",FrameBased=true);
+```
+
+![Classifier as Simulink layer blocks](images/simulink-classifier.png)
+
+![Autoencoder as Simulink layer blocks](images/simulink-autoencoder.png)
+
 ---
 
 ## Step 3: Compress Classifier
+
+### Analyze Network for Compression
+
+In Deep Network Designer, open the network with `deepNetworkDesigner(netCls)` and click **Analyze for Compression**. The supporting function `exportCompressionAnalysis` shows the same report in a separate window and saves it as an image.
+
+```matlab
+exportCompressionAnalysis(netCls,fullfile(projectFolder,"images","compression-analysis.png"))
+```
+
+![Analysis for network compression](images/compression-analysis.png)
+
+The report estimates that pruning alone could remove up to 91.1% of the parameter memory, projection up to 91%, and int8 quantization 74.9%. These maximums are structural limits, regardless of accuracy. As in the first tutorial, the second and third convolution layers hold most of the weights and the computation.
+
+![Learnables and MACs per layer](images/compression-layers.png)
+
+### Explore Compression Design Space
+
+The optional script `Part3a_ExploreCompression.m` estimates what each technique costs in accuracy. `neuronPCA` shows how many directions each layer's activations really use.
+
+![Explained variance of layer activations](images/compression-pca.png)
+
+The curves rise faster than in the first tutorial. `fc_1` is extremely redundant: two of its 32 directions carry more than 99% of the variance, and `conv1d_3` reaches 95% with a quarter of its directions. Separating no, light, and strong vibration is an easier task, and the network has more capacity than it needs.
+
+Apply each technique at increasing strength and measure the test accuracy, once directly ("one-shot") and once after 15 epochs of fine-tuning.
+
+```matlab
+prunableNet = accumulateTaylorScores(netCls,XTrain,TTrain);
+netPruned = dlnetwork(updatePrunables(prunableNet,MaxToPrune=numToPrune));
+netProjected = compressNetworkUsingProjection(netCls,npca,LearnablesReductionGoal=goal);
+```
+
+![Accuracy versus compression strength](images/compression-sweep.png)
+
+With fine-tuning, pruning keeps 100% test accuracy all the way to 87% reduction, and projection keeps it to about 73% before it collapses. The 76% reduction used below is a conservative choice. With only three test recordings per class, 100% test accuracy does not guarantee the same result on new recordings, and leaving some capacity in reserve makes the model more robust to how the board is held or mounted.
+
+### Prune and Project Network
 
 Prune first, then project, and fine-tune after each step.
 
@@ -278,6 +342,10 @@ Quantize the autoencoder the same way and recompute the robust threshold with th
 ```
 
 ![Memory](images/memory.png)
+
+`Part3a_ExploreCompression.m` places this result in the full design space, with every option from the sweep at float32 and at the estimated int8 size. The pruning curve shows that an int8 classifier of about 1 KB would also be possible.
+
+![Compression design space](images/compression-design-space.png)
 
 ---
 
@@ -370,17 +438,21 @@ The classifier tracked every phase, with a confidence of 0.98–0.996 on all win
 | `helpers/computeMotionIndicators.m` | 24 motion indicators per window (supports code generation) |
 | `helpers/autoencoderScore.m` | Mean squared reconstruction error |
 | `helpers/networkSummary.m` | Learnables and parameter memory of a network |
+| `helpers/plotNetworkArchitecture.m` | Layer diagram with the output size of each layer |
+| `helpers/exportSimulinkDiagram.m` | Picture of a network as Simulink layer blocks, arranged in rows |
+| `helpers/exportCompressionAnalysis.m` | Save the Analyze for Compression report of Deep Network Designer as an image |
+| `helpers/accumulateTaylorScores.m` | Taylor importance scores of all prunable filters, for pruning without retraining |
 | `codegen/vibrationSeverityDetect.m` | Entry-point function for code generation |
 | `arduino/VibrationSeverityMonitor/` | Arduino sketch; the generated C code is copied to `src/model/` |
 | `data/raw/Vibration_Dataset/` | The 45 recordings (NORMAL, TAPPING, GENTLE_SHAKING) |
 
 ## See Also
 
-`interp1` | `fitctree` | `trainnet` | `testnet` | `compressNetworkUsingTaylorPruning` | `compressNetworkUsingProjection` | `dlquantizer` | `estimateNetworkMetrics` | `mad` | `codegen` | `coder.loadDeepLearningNetwork` | `serialport`
+`interp1` | `fitctree` | `trainnet` | `testnet` | `compressNetworkUsingTaylorPruning` | `taylorPrunableNetwork` | `compressNetworkUsingProjection` | `neuronPCA` | `exportNetworkToSimulink` | `deepNetworkDesigner` | `dlquantizer` | `estimateNetworkMetrics` | `mad` | `codegen` | `coder.loadDeepLearningNetwork` | `serialport`
 
 ## Related Examples
 
-- [Tutorial 1: Train, Compress, and Deploy a Vibration Anomaly Detector](../01-vibration-anomaly-detection/README.md)
+- [Tutorial 1: Train, Compress, and Deploy a Vibration Anomaly Detector](https://github.com/samy101/embedded-ai-with-matlab/tree/main/01-vibration-anomaly-detection)
 - [Train and Compress AI Model for Road Damage Detection](https://www.mathworks.com/help/deeplearning/ug/train-and-compress-ai-model-for-road-damage-detection.html)
 - [Analyze and Compress 1-D Convolutional Neural Network](https://www.mathworks.com/help/deeplearning/ug/analyze-and-compress-1d-convolutional-neural-network.html)
 - [Generate Generic C/C++ Code for Deep Learning Networks](https://www.mathworks.com/help/coder/ug/generate-generic-cc-code-for-deep-learning-networks.html)

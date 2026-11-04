@@ -132,6 +132,15 @@ peakSummary = table(["Not flagged"; "Flagged"],[sum(~isFlagged); sum(isFlagged)]
     VariableNames=["NORMAL test windows" "Count" "Median peak (g)"])
 %[text] This is the value of the hybrid design on your own data: the classifier, trained on recording labels, calls these windows level 0, while the autoencoder reports them as an unrecognized minor vibration. On the board this appears as a separate state.
 %%
+%[text] ## Visualize the Network Architectures
+%[text] The helper `plotNetworkArchitecture` draws each layer as a box whose color shows the layer type and whose height grows with the number of channels. The output size of each layer is printed below it. The classifier reads the raw 100 × 6 window of accelerometer and gyroscope samples, halves the time axis twice with max pooling, and collapses it with global average pooling, so the fully connected layers see a single 32-element summary of the whole second. The autoencoder squeezes the 24 motion indicators through a 6-neuron bottleneck.
+plotNetworkArchitecture(netCls,[100 6],"Classifier: 1-D CNN on the 100 × 6 IMU window");
+plotNetworkArchitecture(netAE,24,"Autoencoder on 24 motion indicators");
+%[text] You can also inspect the networks interactively with `analyzeNetwork(netCls)`, or convert them to Simulink. `exportNetworkToSimulink` creates a model with one Simulink block per layer, which you can simulate with signals from other Simulink blocks. With `FrameBased=true`, the model takes a whole window at each time step, which the max pooling layers need.
+if ~isempty(ver("simulink")) && license("test","Simulink")   % Simulink is optional
+    exportNetworkToSimulink(netCls,ModelName="vibrationSeverityClassifier",FrameBased=true);
+end
+%%
 %[text] ## Save the Trained Networks
 save(fullfile(projectFolder,"models","baseline.mat"),"netCls","netAE","aeThreshold","accuracyCls","accuracyBaseline")
 %[text] Next, open **Part3\_CompressClassifier**.

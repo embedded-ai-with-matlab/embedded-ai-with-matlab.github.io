@@ -327,14 +327,14 @@ td:has(> .led) { white-space: nowrap; }
 <ol class="steps">
   <li><strong>Prepare Data</strong>: inspect the logger's timing, resample to a uniform 100 Hz grid, handle board orientation, and split by recording (<code>Part1_PrepareData.m</code>).</li>
   <li><strong>Train Networks</strong>: compare against an RMS-threshold baseline, train the classifier and the autoencoder, and examine what the autoencoder finds (<code>Part2_TrainNetworks.m</code>).</li>
-  <li><strong>Compress Classifier</strong>: Taylor pruning and projection, each followed by fine-tuning (<code>Part3_CompressClassifier.m</code>).</li>
+  <li><strong>Compress Classifier</strong>: Taylor pruning and projection, each followed by fine-tuning (<code>Part3_CompressClassifier.m</code>). Optionally, first explore how far each technique can go (<code>Part3a_ExploreCompression.m</code>).</li>
   <li><strong>Quantize Networks</strong>: convert both networks to 8-bit integers (<code>Part4_QuantizeNetworks.m</code>).</li>
   <li><strong>Generate Code</strong>: generate C code for the Arm Cortex-M4 and verify it against MATLAB (<code>Part5_GenerateCode.m</code>).</li>
   <li><strong>Deploy to Arduino</strong>: build, flash, and test the monitor live (<code>Part6_DeployToArduino.m</code>).</li>
 </ol>
 
 <div class="req">
-  <p><b>Products:</b> Deep Learning Toolbox, Deep Learning Toolbox Model Compression Library, MATLAB Coder, MATLAB Coder Interface for Deep Learning, Embedded Coder, Fixed-Point Designer, Statistics and Machine Learning Toolbox. Signal Processing Toolbox is not required.</p>
+  <p><b>Products:</b> Deep Learning Toolbox, Deep Learning Toolbox Model Compression Library, MATLAB Coder, MATLAB Coder Interface for Deep Learning, Embedded Coder, Fixed-Point Designer, Statistics and Machine Learning Toolbox. Simulink is optional and is used only to export the networks as Simulink models. Signal Processing Toolbox is not required.</p>
   <p><b>Hardware:</b> Arduino Nano 33 BLE Sense Rev1 (LSM9DS1 IMU); Arduino IDE 2 with the Arduino Mbed OS Nano Boards core and the Arduino_LSM9DS1 library.</p>
 </div>
 </section>
@@ -431,6 +431,12 @@ accuracyCls = testnet(netCls,XTest,labelsTest,<span class="s">"accuracy"</span>,
   <figcaption>Test set: RMS threshold baseline (left) and 1-D CNN (right).</figcaption>
 </figure>
 <p>The CNN also classifies the three boundary windows that the threshold got wrong. With only three test recordings per class, treat the exact percentage with care: it shows that the classes are well separated in new sessions, not that the model never makes a mistake.</p>
+<p>The supporting function <code>plotNetworkArchitecture</code> draws each layer as a box whose color shows the layer type and whose height grows with the number of channels. The output size of each layer is printed below it. Max pooling halves the time axis twice, from 100 to 25 steps, and global average pooling collapses it, so the fully connected layers see a single 32-element summary of the whole second.</p>
+<pre class="code"><code>plotNetworkArchitecture(netCls,[100 6],<span class="s">"Classifier: 1-D CNN on the 100 × 6 IMU window"</span>);</code></pre>
+<figure>
+  <div class="plate"><img src="images/architecture-classifier.png" alt="Layer diagram of the 1-D CNN classifier with the output size of each layer" width="1632" height="455" loading="lazy"></div>
+  <figcaption>Classifier architecture. Box color shows the layer type; box height grows with the number of channels.</figcaption>
+</figure>
 
 <h3>Train the Autoencoder on NORMAL Windows</h3>
 <p>The autoencoder learns 24 motion indicators of an undisturbed board (log RMS, crest factor, kurtosis, and high-frequency energy fraction per channel) and reconstructs them through a 6-neuron bottleneck.</p>
@@ -444,6 +450,10 @@ accuracyCls = testnet(netCls,XTest,labelsTest,<span class="s">"accuracy"</span>,
     reluLayer
     fullyConnectedLayer(24)];
 netAE = trainnet(ZTrain,ZTrain,layersAE,<span class="s">"mse"</span>,optionsAE);</code></pre>
+<figure>
+  <div class="plate"><img src="images/architecture-autoencoder.png" alt="Layer diagram of the autoencoder: 24, 32, 6, 32, 24" width="1311" height="455" loading="lazy"></div>
+  <figcaption>Autoencoder architecture with its 6-neuron bottleneck.</figcaption>
+</figure>
 
 <h3>Choose a Robust Anomaly Threshold</h3>
 <p>Most <code>NORMAL</code> validation windows have a tiny reconstruction error, but a few are very large:</p>
@@ -475,8 +485,52 @@ aeThreshold = 10^(median(logScore) + 5*1.4826*mad(logScore,1))</code></pre>
   <p>The flagged windows contain small real bumps, such as someone touching the table during a <code>NORMAL</code> recording. The labels describe a whole 30 s recording, but the autoencoder judges each second on its own and notices them. The classifier, trained on recording labels, calls these windows level 0; the autoencoder reports them as unrecognized vibration. This is what the hybrid design adds.</p>
 </div>
 
+<h3>Export Networks to Simulink</h3>
+<p><code>exportNetworkToSimulink</code> converts a network into a Simulink model with one block per layer. With <code>FrameBased=true</code>, the model takes a whole 100-by-6 window at each time step, which the max pooling layers need. You can also inspect the networks interactively with <code>analyzeNetwork(netCls)</code>.</p>
+<pre class="code"><code>exportNetworkToSimulink(netCls,ModelName=<span class="s">"vibrationSeverityClassifier"</span>,FrameBased=true);</code></pre>
+<figure>
+  <div class="plate"><img src="images/simulink-classifier.png" alt="Simulink model of the classifier with one block per layer" width="2483" height="642" loading="lazy"></div>
+  <figcaption>Classifier as Simulink layer blocks.</figcaption>
+</figure>
+<figure>
+  <div class="plate"><img src="images/simulink-autoencoder.png" alt="Simulink model of the autoencoder with one block per layer" width="2067" height="392" loading="lazy"></div>
+  <figcaption>Autoencoder as Simulink layer blocks.</figcaption>
+</figure>
+
 <!-- ============================================================ -->
 <h2 id="step-3"><span class="num">3</span>Compress Classifier</h2>
+
+<h3>Analyze Network for Compression</h3>
+<p>In Deep Network Designer, open the network with <code>deepNetworkDesigner(netCls)</code> and click <b>Analyze for Compression</b>. The supporting function <code>exportCompressionAnalysis</code> shows the same report in a separate window and saves it as an image.</p>
+<pre class="code"><code>exportCompressionAnalysis(netCls,fullfile(projectFolder,<span class="s">"images"</span>,<span class="s">"compression-analysis.png"</span>))</code></pre>
+<figure>
+  <div class="plate"><img src="images/compression-analysis.png" alt="Analyze for Compression report from Deep Network Designer for the classifier" width="2400" height="1447" loading="lazy"></div>
+  <figcaption>Analyze for Compression report of the trained classifier.</figcaption>
+</figure>
+<p>The report estimates that pruning alone could remove up to 91.1% of the parameter memory, projection up to 91%, and int8 quantization 74.9%. These maximums are structural limits, regardless of accuracy. As in the first tutorial, the second and third convolution layers hold most of the weights and the computation.</p>
+<figure>
+  <div class="plate"><img src="images/compression-layers.png" alt="Bar charts of learnable parameters and multiply-accumulate operations per layer" width="1438" height="902" loading="lazy"></div>
+  <figcaption>Learnable parameters and multiply-accumulate operations (MACs) per layer.</figcaption>
+</figure>
+
+<h3>Explore Compression Design Space</h3>
+<p>The optional script <code>Part3a_ExploreCompression.m</code> estimates what each technique costs in accuracy. <code>neuronPCA</code> shows how many directions each layer's activations really use.</p>
+<figure>
+  <div class="plate"><img src="images/compression-pca.png" alt="Cumulative explained variance of each layer's activations versus the percentage of principal components kept" width="1426" height="932" loading="lazy"></div>
+  <figcaption>Explained variance of the layer activations.</figcaption>
+</figure>
+<p>The curves rise faster than in the first tutorial. <code>fc_1</code> is extremely redundant: two of its 32 directions carry more than 99% of the variance, and <code>conv1d_3</code> reaches 95% with a quarter of its directions. Separating no, light, and strong vibration is an easier task, and the network has more capacity than it needs.</p>
+<p>Apply each technique at increasing strength and measure the test accuracy, once directly ("one-shot") and once after 15 epochs of fine-tuning.</p>
+<pre class="code"><code>prunableNet = accumulateTaylorScores(netCls,XTrain,TTrain);
+netPruned = dlnetwork(updatePrunables(prunableNet,MaxToPrune=numToPrune));
+netProjected = compressNetworkUsingProjection(netCls,npca,LearnablesReductionGoal=goal);</code></pre>
+<figure>
+  <div class="plate"><img src="images/compression-sweep.png" alt="Test accuracy versus percentage of learnable parameters removed for pruning and projection, with and without fine-tuning" width="1426" height="932" loading="lazy"></div>
+  <figcaption>Accuracy versus compression strength. Dashed: one-shot; solid: after fine-tuning. The star marks the recipe used below.</figcaption>
+</figure>
+<p>With fine-tuning, pruning keeps 100% test accuracy all the way to 87% reduction, and projection keeps it to about 73% before it collapses. The 76% reduction used below is a conservative choice. With only three test recordings per class, 100% test accuracy does not guarantee the same result on new recordings, and leaving some capacity in reserve makes the model more robust to how the board is held or mounted.</p>
+
+<h3>Prune and Project Network</h3>
 <p>Prune first, then project, and fine-tune after each step.</p>
 <pre class="code"><code>[netPruned,infoPruned] = compressNetworkUsingTaylorPruning(netCls,XTrain,TTrain,<span class="s">"crossentropy"</span>,optionsPruning, ...
     LearnablesReductionGoal=0.5, ...
@@ -520,6 +574,11 @@ netClsQ = quantize(quantObjCls,ExponentScheme=<span class="s">"histogram"</span>
 <figure>
   <div class="plate"><img src="images/memory.png" alt="Classifier parameter memory from 28.7 KB to 2.0 KB" width="934" height="578" loading="lazy"></div>
   <figcaption>Classifier parameter memory across the workflow.</figcaption>
+</figure>
+<p><code>Part3a_ExploreCompression.m</code> places this result in the full design space, with every option from the sweep at float32 and at the estimated int8 size. The pruning curve shows that an int8 classifier of about 1 KB would also be possible.</p>
+<figure>
+  <div class="plate"><img src="images/compression-design-space.png" alt="Test accuracy versus classifier parameter memory on a log scale for all pruning and projection options, at float32 and estimated int8" width="1410" height="932" loading="lazy"></div>
+  <figcaption>Compression design space, with the path taken through Steps 3 and 4.</figcaption>
 </figure>
 
 <!-- ============================================================ -->
@@ -595,6 +654,10 @@ Global variables use 48344 bytes (18%) of dynamic memory, leaving 213800 bytes f
     <tr><td><code>helpers/computeMotionIndicators.m</code></td><td>24 motion indicators per window (supports code generation)</td></tr>
     <tr><td><code>helpers/autoencoderScore.m</code></td><td>Mean squared reconstruction error</td></tr>
     <tr><td><code>helpers/networkSummary.m</code></td><td>Learnables and parameter memory of a network</td></tr>
+    <tr><td><code>helpers/plotNetworkArchitecture.m</code></td><td>Layer diagram with the output size of each layer</td></tr>
+    <tr><td><code>helpers/exportSimulinkDiagram.m</code></td><td>Picture of a network as Simulink layer blocks, arranged in rows</td></tr>
+    <tr><td><code>helpers/exportCompressionAnalysis.m</code></td><td>Save the Analyze for Compression report of Deep Network Designer as an image</td></tr>
+    <tr><td><code>helpers/accumulateTaylorScores.m</code></td><td>Taylor importance scores of all prunable filters, for pruning without retraining</td></tr>
     <tr><td><code>codegen/vibrationSeverityDetect.m</code></td><td>Entry-point function for code generation</td></tr>
     <tr><td><code>arduino/VibrationSeverityMonitor/</code></td><td>Arduino sketch; the generated C code is copied to <code>src/model/</code></td></tr>
     <tr><td><code>data/raw/Vibration_Dataset/</code></td><td>The 45 recordings (NORMAL, TAPPING, GENTLE_SHAKING)</td></tr>
@@ -602,11 +665,11 @@ Global variables use 48344 bytes (18%) of dynamic memory, leaving 213800 bytes f
 </table></div>
 
 <h3>See Also</h3>
-<p class="seealso"><code>interp1</code> · <code>fitctree</code> · <code>trainnet</code> · <code>testnet</code> · <code>compressNetworkUsingTaylorPruning</code> · <code>compressNetworkUsingProjection</code> · <code>dlquantizer</code> · <code>estimateNetworkMetrics</code> · <code>mad</code> · <code>codegen</code> · <code>coder.loadDeepLearningNetwork</code> · <code>serialport</code></p>
+<p class="seealso"><code>interp1</code> · <code>fitctree</code> · <code>trainnet</code> · <code>testnet</code> · <code>compressNetworkUsingTaylorPruning</code> · <code>taylorPrunableNetwork</code> · <code>compressNetworkUsingProjection</code> · <code>neuronPCA</code> · <code>exportNetworkToSimulink</code> · <code>deepNetworkDesigner</code> · <code>dlquantizer</code> · <code>estimateNetworkMetrics</code> · <code>mad</code> · <code>codegen</code> · <code>coder.loadDeepLearningNetwork</code> · <code>serialport</code></p>
 
 <h3>Related Examples</h3>
 <ul>
-  <li><a href="../01-vibration-anomaly-detection/README.md">Tutorial 1: Train, Compress, and Deploy a Vibration Anomaly Detector</a></li>
+  <li><a href="https://github.com/samy101/embedded-ai-with-matlab/tree/main/01-vibration-anomaly-detection">Tutorial 1: Train, Compress, and Deploy a Vibration Anomaly Detector</a></li>
   <li><a href="https://www.mathworks.com/help/deeplearning/ug/train-and-compress-ai-model-for-road-damage-detection.html">Train and Compress AI Model for Road Damage Detection</a></li>
   <li><a href="https://www.mathworks.com/help/deeplearning/ug/analyze-and-compress-1d-convolutional-neural-network.html">Analyze and Compress 1-D Convolutional Neural Network</a></li>
   <li><a href="https://www.mathworks.com/help/coder/ug/generate-generic-cc-code-for-deep-learning-networks.html">Generate Generic C/C++ Code for Deep Learning Networks</a></li>

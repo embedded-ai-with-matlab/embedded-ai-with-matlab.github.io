@@ -3,8 +3,7 @@
 ## Software
 
 - MATLAB (a recent compatible release; the supplied training project uses modern `trainnet`/`dlnetwork` APIs).
-- For Lab 1: MATLAB and **Statistics and Machine Learning Toolbox** for the baseline decision tree; plotting and CSV import use MATLAB core features. Other supplied scripts require further products as specified in the project README.
-- For the advanced full project: **Deep Learning Toolbox**, **Deep Learning Toolbox Model Compression Library**, **MATLAB Coder**, **MATLAB Coder Interface for Deep Learning**, **Embedded Coder**, **Fixed-Point Designer**, and **Statistics and Machine Learning Toolbox**. Requirements may depend on release.
+- For Lab 1 (the complete vibration severity monitor): **Deep Learning Toolbox**, **Deep Learning Toolbox Model Compression Library**, **MATLAB Coder**, **MATLAB Coder Interface for Deep Learning**, **Embedded Coder**, **Fixed-Point Designer**, and **Statistics and Machine Learning Toolbox**. Requirements may depend on release. **Simulink** is used only to export the classifier as a Simulink model; without it, that export is skipped.
 - For hardware: **Arduino IDE 2**, **Arduino Mbed OS Nano Boards** core, **Arduino_LSM9DS1** library, and a Nano 33 BLE Sense **Rev1**.
 - Quarto CLI for generating the book. PDF additionally requires a suitable TeX distribution with LuaLaTeX.
 

@@ -71,7 +71,7 @@ Explore MATLAB scripts, project files, datasets, trained models, and supporting 
 ::: {.embedded-card}
 ### 🔧 Hands-On Project
 
-Build a vibration severity monitor from IMU measurements through feature extraction and classification.
+Build a vibration severity monitor from IMU recordings to a compressed model running on an Arduino.
 
 [Open Lab 1 →](labs/01-vibration-severity-monitor.qmd)
 :::

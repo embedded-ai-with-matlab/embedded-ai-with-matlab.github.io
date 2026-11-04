@@ -4,7 +4,7 @@ The course includes **12 planned weekly labs**. Lab 1 is implemented; the remain
 
 | Week | MATLAB lab | Intended output |
 |---|---|---|
-| 1 | Vibration recording analysis and baseline classifier | plots, recording-wise split, metrics |
+| 1 | End-to-end vibration severity monitor: data, CNN, compression, code generation, deployment | metrics, compression study, generated code, live board test |
 | 2 | Live IMU data acquisition | sensor stream and timing diagnostic |
 | 3 | Signal filtering and feature engineering | window features and frequency plots |
 | 4 | Classical machine learning for sensor data | classifier comparison |
