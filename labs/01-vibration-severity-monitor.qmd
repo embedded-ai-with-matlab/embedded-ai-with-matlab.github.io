@@ -10,7 +10,7 @@ All scripts, helper functions, the Arduino sketch, and the 45 recordings are in 
 
 ## Why this problem?
 
-A model is only as good as the match between its training data and the signals it sees in the field. A detector trained on someone else's dataset, with a different sensor, mounting, and environment, often reports nonsense once it runs on your own device. This mismatch, called *domain shift*, is one of the most common reasons embedded AI projects that work on a laptop fail on the device. The most reliable fix is to record the training data with the device that will run the model, and that is what you do here.
+A model is only as good as the match between its training data and the signals it sees in the field. A detector trained on someone else's dataset, with a different sensor, mounting, and environment, often reports nonsense once it runs on your own device. This mismatch, called *domain shift*, is one of the most common reasons embedded AI projects that work on a laptop fail on the device. One of the most effective fixes is to record the training data with the device that will run the model, and that is what you do here.
 
 It also pays to pick a task that matters. Knowing *how strongly* something vibrates is useful in many places:
 
@@ -44,7 +44,8 @@ By the end of this lab, you should be able to:
 6. analyze a network for compression and measure the accuracy cost of pruning and projection;
 7. quantize networks to 8-bit integers and compare memory and accuracy;
 8. generate C code for an Arm Cortex-M microcontroller and verify it against MATLAB;
-9. build, flash, and test the detector live on the board.
+9. build, flash, and test the detector live on the board;
+10. read training and validation curves to judge whether a model has learned, and is starting to overfit.
 
 ## Requirements
 
@@ -67,10 +68,6 @@ By the end of this lab, you should be able to:
 - USB cable (data-capable, not charge-only)
 
 **Estimated time:** one session for Steps 1–2, one session for Steps 3–4, and one session for Steps 5–6.
-
-::: {.callout-note title="Reference results"}
-The numbers and figures on this page come from a reference run on MATLAB R2026b with a Nano 33 BLE Sense Rev1. Your results can differ slightly; report the numbers from your own run.
-:::
 
 ## The dataset
 
@@ -95,9 +92,9 @@ The board reports three vibration levels and one warning state:
 
 These are teaching classes for vibration *conditions*, not ISO machine-severity grades.
 
-## The project
+## Our approach: a hybrid detector
 
-The detector is a **hybrid** of two networks: a **1-D CNN classifier** that reports the vibration level, and an **autoencoder trained only on `NORMAL` data** that flags anything it does not recognize. The project folder [`matlab/projects/vibration-severity-monitor`](https://github.com/embedded-ai-with-matlab/embedded-ai-with-matlab.github.io/tree/main/matlab/projects/vibration-severity-monitor) contains one MATLAB script per stage:
+The detector is a **hybrid** of two networks: a **1-D CNN classifier** that reports the vibration level, and an **autoencoder trained only on `NORMAL` data** that flags anything it does not recognize. The project folder contains one MATLAB script per stage:
 
 | Step | Script | What it does |
 |---|---|---|
@@ -111,7 +108,7 @@ The detector is a **hybrid** of two networks: a **1-D CNN classifier** that repo
 
 ![Workflow of the project, one script per stage.](../matlab/projects/vibration-severity-monitor/images/workflow.png){#fig-lab1-workflow width=95%}
 
-The scripts (see the link at the top of this page) are plain-text live scripts: open them in the MATLAB Editor to see formatted text and figures inline. Run them in order, because each script loads the MAT files saved by the previous one. Each script sets its own project folder, so you can run it from anywhere:
+The scripts are plain-text live scripts: open them in the MATLAB Editor to see formatted text and figures inline. Run them in order, because each script loads the MAT files saved by the previous one. Each script sets its own project folder, so you can run it from anywhere:
 
 ```{.matlab}
 projectRoot = fullfile(pwd,"matlab","projects","vibration-severity-monitor");   % from the repository root
@@ -119,6 +116,10 @@ run(fullfile(projectRoot,"Part1_PrepareData.m"))
 ```
 
 ## Step 1 — Prepare the data
+
+::: {.callout-note title="Reference results"}
+The numbers and figures on this page come from a reference run on MATLAB R2026b with a Nano 33 BLE Sense Rev1. Your results can differ slightly; compare them with the values shown here.
+:::
 
 Run `Part1_PrepareData.m`.
 
@@ -192,7 +193,7 @@ The classes are ordered by energy, but the tapping and shaking clusters touch, a
 
 ## Step 2 — Train the networks
 
-Run `Part2_TrainNetworks.m`. Training takes a few minutes on a laptop CPU and opens a training-progress window for each network.
+Run `Part2_TrainNetworks.m`. Training takes under a minute on a laptop CPU and opens a training-progress window for each network.
 
 ### Start with a baseline
 
@@ -554,6 +555,13 @@ unrecognizedCount = isUnrecognized ? unrecognizedCount + 1 : 0;
 int state = (unrecognizedCount >= kUnrecognizedWindows) ? 3 : level;
 ```
 
+::: {.callout-warning title="If the board is not found"}
+- Use a USB cable that carries **data**; many cables only charge.
+- Plug the board in directly, or double-press the reset button to put it in bootloader mode, and run the script again.
+- Close the Arduino IDE Serial Monitor and any other program that has the serial port open.
+- Check that Arduino IDE 2 is installed, and set `arduinoCli` (below) if it is not in the default location.
+:::
+
 ### Build and flash
 
 Connect the board and run `Part6_DeployToArduino.m`. It uses the `arduino-cli` included with Arduino IDE 2 to install the board core and the IMU library, compile the sketch, and upload it.
@@ -579,7 +587,7 @@ The complete application, including Mbed OS, the IMU driver, and both networks, 
 
 ### Test the monitor live
 
-After flashing, the script reads the board's output with a `serialport` object for 30 windows and plots it. During the reference run, the board was left still, then tapped, then shaken gently, then left still again.
+After flashing, the script reads the board's output with a `serialport` object and plots it. By default it reads 30 windows (about 30 seconds): leave the board still for about ten seconds, then tap it, then shake it gently. The reference run below used a slightly longer capture of 34 windows (`numWindows = 34`), with the board left still again at the end.
 
 ```{.matlab}
 board = serialport(port,115200);
@@ -610,43 +618,13 @@ The classifier tracked every phase, with a confidence of 0.98–0.996 on all win
 | Inference time on the board | 65 ms per one-second window |
 | Live test | 34 of 34 windows matched the action |
 
-## Questions
-
-1. Which information does the CNN use that a single RMS value discards?
-2. Why can a reported 100% accuracy on three held-out recordings per class be misleading? What experiment would test generalization to a different mounting angle or a different board?
-3. Why does accuracy drop so much more without fine-tuning? Why might projection collapse earlier than pruning?
-4. Every compression option fits in the board's flash. What else should decide how far to compress?
-5. Why must the generated code keep the weights in the source files, and why does the sketch wait for three unrecognized windows before showing blue?
-6. How does the one-second window constrain the detection latency, and how could it be reduced?
-
-## Submission checklist
-
-- A table with class counts, recording durations, and missed samples, and a plot of the sampling intervals.
-- The baseline and CNN test accuracies with their confusion charts.
-- The output size of every classifier layer, and a hand calculation of the learnable parameters of one convolution layer (check it with `estimateNetworkMetrics(netCls)`).
-- Your accuracy-versus-compression plot, with the reduction at which each technique first loses accuracy.
-- Your memory and accuracy table after pruning, projection, and quantization.
-- The MEX verification results and the sketch's flash and RAM usage.
-- A plot of your live run on the board, and one page of interpretation, limitations, and next experiments.
-
 ## Extension challenge
 
 Record five new sessions per class with a **different mounting orientation**, without adding them to training. Evaluate the original and the compressed classifier on these sessions, explain any performance drop, and test whether the most compressed network that kept full accuracy in Step 3 loses more accuracy than the original. Keep sensor settings, measurement units, and preprocessing consistent so the comparison is meaningful.
 
-## Supporting files
+## Where to go next
 
-| File | Description |
-|---|---|
-| `helpers/loadRecordings.m` | Load the CSV recordings and resample them onto a uniform grid |
-| `helpers/makeWindows.m` | Cut recordings into fixed-length windows, keeping the recording index |
-| `helpers/splitRecordings.m` | Stratified train/validation/test split by recording |
-| `helpers/computeMotionIndicators.m` | 24 motion indicators per window (supports code generation) |
-| `helpers/autoencoderScore.m` | Mean squared reconstruction error |
-| `helpers/networkSummary.m` | Learnables and parameter memory of a network |
-| `helpers/plotNetworkArchitecture.m` | Layer diagram with the output size of each layer |
-| `helpers/exportSimulinkDiagram.m` | Picture of a network as Simulink layer blocks, arranged in rows |
-| `helpers/exportCompressionAnalysis.m` | Save the Analyze for Compression report of Deep Network Designer as an image |
-| `helpers/accumulateTaylorScores.m` | Taylor importance scores of all prunable filters, for pruning without retraining |
-| `codegen/vibrationSeverityDetect.m` | Entry-point function for code generation |
-| `arduino/VibrationSeverityMonitor/` | Arduino sketch; the generated C code is copied to `src/model/` |
-| `data/raw/Vibration_Dataset/` | The 45 recordings (`NORMAL`, `TAPPING`, `GENTLE_SHAKING`) |
+- **More conditions:** record new classes, such as a board taped to a running fan or motor, and retrain the classifier with more than three levels.
+- **Other sensors or boards:** the same workflow applies to another IMU or microcontroller; keep the sampling rate, units, and preprocessing the same in training and on the device.
+- **Smaller or faster:** try the most compressed networks from the Step 3 sweep and measure the inference time on the board.
+- **Longer windows or overlap:** change the window length or add overlap, and see how detection latency and accuracy change.
