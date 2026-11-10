@@ -4,6 +4,34 @@
 A complete embedded AI application, from raw sensor data to a running device. Using **45 real IMU recordings from an Arduino Nano 33 BLE Sense Rev1**, you train a deep learning detector in MATLAB, compress it with pruning, projection, and quantization, generate C code, and deploy it to the same board. Every second, the board reports whether it is still, vibrating lightly, or vibrating strongly, and flags vibration it does not recognize.
 :::
 
+::: {.callout-tip title="Get the code and data"}
+All scripts, helper functions, the Arduino sketch, and the 45 recordings are in the project folder [`matlab/projects/vibration-severity-monitor`](https://github.com/embedded-ai-with-matlab/embedded-ai-with-matlab.github.io/tree/main/matlab/projects/vibration-severity-monitor). Clone or download the repository and open that folder in MATLAB before you start. The same tutorial is also available as a standalone repository: [`samy101/embedded-ai-with-matlab`](https://github.com/samy101/embedded-ai-with-matlab).
+:::
+
+## Why this problem?
+
+A model is only as good as the match between its training data and the signals it sees in the field. A detector trained on someone else's dataset, with a different sensor, mounting, and environment, often reports nonsense once it runs on your own device. This mismatch, called *domain shift*, is one of the most common reasons embedded AI projects that work on a laptop fail on the device. The most reliable fix is to record the training data with the device that will run the model, and that is what you do here.
+
+It also pays to pick a task that matters. Knowing *how strongly* something vibrates is useful in many places:
+
+- **Machine-condition monitoring** sorts vibration into severity zones, so a technician can tell "normal" from "needs attention" before a part fails.
+- **Shipping and handling** checks whether fragile goods were treated roughly in transit.
+- **Measurement and lab work** needs a still surface, and a sensor can tell you when a table is not still.
+
+Running the detector on a small sensor node avoids streaming raw vibration data to a server. The node works without a network, reports only when something changes, and can run for a long time on little power.
+
+### Problem statement
+
+Using 45 recordings made with the board's own IMU, build a monitor that reports every second whether the board is **still** (level 0), **vibrating lightly** (level 1), or **vibrating strongly** (level 2). It also flags vibration that fits none of these levels. The monitor shows the result on the board's RGB LED, with no computer needed after flashing.
+
+The data and the device make this harder than it sounds:
+
+- **Small dataset:** there are only 15 recordings per class, so the evaluation must be split by recording to give an honest estimate on new sessions.
+- **Imperfect logging:** the logger occasionally missed samples, so the recordings must be resampled onto a uniform time grid.
+- **Hidden shortcuts:** the classes were recorded at different board orientations, so the features must not let the model learn "tilted means shaking".
+- **Overlapping classes:** a vigorous tap carries as much energy as a gentle shake, so the model must use the shape of the signal, not just its level.
+- **Tight device limits:** the model must fit in a few kilobytes, run well within the one-second window on a 64 MHz microcontroller, and give the same answers as in MATLAB.
+
 ## Learning objectives
 
 By the end of this lab, you should be able to:
@@ -20,9 +48,23 @@ By the end of this lab, you should be able to:
 
 ## Requirements
 
-**Software:** MATLAB R2025a or later (developed and tested with R2026b) with Deep Learning Toolbox, Deep Learning Toolbox Model Compression Library, MATLAB Coder, MATLAB Coder Interface for Deep Learning, Embedded Coder, Fixed-Point Designer, and Statistics and Machine Learning Toolbox. Simulink is used only to export the classifier as a Simulink model in Step 2; without it, that export is skipped.
+**Software**
 
-**Hardware:** Arduino Nano 33 BLE Sense **Rev1** (LSM9DS1 IMU) and a USB cable. Install **Arduino IDE 2**; the deployment script uses the `arduino-cli` included with it to install the *Arduino Mbed OS Nano Boards* core and the *Arduino_LSM9DS1* library automatically.
+- MATLAB R2025a or later (developed and tested with R2026b)
+- Deep Learning Toolbox
+- Deep Learning Toolbox Model Compression Library
+- MATLAB Coder
+- MATLAB Coder Interface for Deep Learning
+- Embedded Coder
+- Fixed-Point Designer
+- Statistics and Machine Learning Toolbox
+- Arduino IDE 2: the deployment script uses the `arduino-cli` included with it to install the *Arduino Mbed OS Nano Boards* core and the *Arduino_LSM9DS1* library automatically
+- Simulink (optional): used only to export the classifier as a Simulink model in Step 2; without it, that export is skipped
+
+**Hardware**
+
+- Arduino Nano 33 BLE Sense **Rev1** (LSM9DS1 IMU)
+- USB cable (data-capable, not charge-only)
 
 **Estimated time:** one session for Steps 1–2, one session for Steps 3–4, and one session for Steps 5–6.
 
@@ -69,7 +111,7 @@ The detector is a **hybrid** of two networks: a **1-D CNN classifier** that repo
 
 ![Workflow of the project, one script per stage.](../matlab/projects/vibration-severity-monitor/images/workflow.png){#fig-lab1-workflow width=95%}
 
-The scripts are plain-text live scripts: open them in the MATLAB Editor to see formatted text and figures inline. Run them in order, because each script loads the MAT files saved by the previous one. Each script sets its own project folder, so you can run it from anywhere:
+The scripts (see the link at the top of this page) are plain-text live scripts: open them in the MATLAB Editor to see formatted text and figures inline. Run them in order, because each script loads the MAT files saved by the previous one. Each script sets its own project folder, so you can run it from anywhere:
 
 ```{.matlab}
 projectRoot = fullfile(pwd,"matlab","projects","vibration-severity-monitor");   % from the repository root
@@ -202,6 +244,14 @@ accuracyCls = testnet(netCls,XTest,labelsTest,"accuracy",InputDataFormats="TCB")
 accuracyCls = 100
 ```
 
+Because the options include `Plots="training-progress"`, MATLAB opens a **training-progress window** while `trainnet` runs. It shows the training and validation accuracy and loss, and the settings of the run.
+
+![Training progress of the classifier: accuracy (top) and loss (bottom).](../matlab/projects/vibration-severity-monitor/images/training-classifier.png){#fig-lab1-training-cls width=95%}
+
+- **Training curves** (blue) are computed on every mini-batch, so they are noisy. The training accuracy reaches 100% within the first few epochs, and the loss falls toward zero.
+- **Validation curves** (orange) are computed every 50 iterations on the 3 recordings per class held out for validation. Validation accuracy jumps to 92% after the first check and reaches 99% after about 500 iterations. The dip and bump around iterations 400–450 are a reminder that validation data is a small sample.
+- **Output network** (the black dot): `OutputNetwork="best-validation"` returns the network from the check with the lowest validation loss (iteration 850, about epoch 35), not the last one.
+- **What to look for:** a validation loss that stops falling or rises while the training loss keeps falling means the network has begun to memorize the training windows. Here the two curves end close together, so there is no sign of overfitting.
 ![Test set confusion charts: RMS threshold baseline (left) and 1-D CNN (right).](../matlab/projects/vibration-severity-monitor/images/confusion.png){#fig-lab1-confusion width=95%}
 
 The CNN also classifies the three boundary windows that the threshold got wrong. With only three test recordings per class, treat the exact percentage with care: it shows that the classes are well separated in new sessions, not that the model will never make a mistake.
@@ -236,6 +286,14 @@ netAE = trainnet(ZTrain,ZTrain,layersAE,"mse",optionsAE);
 ```
 
 ![Autoencoder architecture with its 6-neuron bottleneck.](../matlab/projects/vibration-severity-monitor/images/architecture-autoencoder.png){#fig-lab1-arch-ae width=80%}
+
+The training-progress window of the autoencoder shows the mean squared error (MSE) over 300 epochs.
+
+![Training progress of the autoencoder.](../matlab/projects/vibration-severity-monitor/images/training-autoencoder.png){#fig-lab1-training-ae width=95%}
+
+The training loss falls quickly and flattens near 0.15. The validation loss is about 20 times higher, and this large gap is mostly **not** overfitting. The validation loss is the *mean* error over the `NORMAL` validation windows, and a few of those windows contain small real bumps, such as a touch on the table. Their reconstruction errors are huge (the 99th percentile in the next section is 72, against a median of 0.17), so a handful of windows dominates the average while most windows are reconstructed almost perfectly. The training recordings contain fewer such bumps.
+
+The validation loss is lowest at iteration 500 (about epoch 62) and then drifts slightly upward, a mild sign that the network is starting to fit the training windows too closely. Because of `OutputNetwork="best-validation"`, you keep the network from iteration 500 and not the one from the end of training. The gap is acceptable here because the autoencoder is judged by how *badly* it reconstructs unfamiliar windows, and the threshold in the next section is chosen to ignore these outliers.
 
 ### Choose a robust anomaly threshold
 
