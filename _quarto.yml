@@ -44,6 +44,7 @@ book:
         - labs/weekly-lab-plan.qmd
         - labs/01-vibration-severity-monitor.qmd
         - labs/02-finger-counting-on-raspberry-pi.qmd
+        - labs/03-digit-recognition-on-raspberry-pi.qmd
         - labs/lab-template.qmd
     - references.qmd
 

@@ -1,0 +1,571 @@
+<title>Digit Recognition on a Raspberry Pi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: documentation-example style: sticky step index, one 70ch reading column, Arial type, grey code and output boxes, blue links. */
+:root {
+  --ink: #212121;
+  --ink-soft: #5f6368;
+  --paper: #ffffff;
+  --panel: #f5f5f5;
+  --rule: #d9d9d9;
+  --trace: #0076a8;          /* link and step-marker blue */
+  --trace-soft: #e5f1f6;
+  --amber: #c45400;          /* orange accent: strings, callouts */
+  --code-bg: #f5f5f5;
+  --out-bg: #ffffff;
+  --plate: #ffffff;
+  --font-display: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  --font-body: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  --font-mono: Menlo, Monaco, Consolas, "Courier New", monospace;
+  --step-0: 0.82rem;
+  --step-1: 1rem;
+  --step-2: 1.2rem;
+  --step-3: 1.5rem;
+  --step-4: 2.1rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #e8eaed; --ink-soft: #a8adb3; --paper: #16181b; --panel: #202326; --rule: #34383d;
+    --trace: #4db3e6; --trace-soft: #13303d; --amber: #f0884a; --code-bg: #202326; --out-bg: #1a1c1f;
+    --plate: #ffffff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #e8eaed; --ink-soft: #a8adb3; --paper: #16181b; --panel: #202326; --rule: #34383d;
+  --trace: #4db3e6; --trace-soft: #13303d; --amber: #f0884a; --code-bg: #202326; --out-bg: #1a1c1f;
+  --plate: #ffffff; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.62;
+}
+a { color: var(--trace); text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--trace); outline-offset: 2px; border-radius: 2px; }
+
+.shell {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 3rem;
+  max-width: 76rem;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 2.5rem 4rem;
+}
+
+/* Step index */
+nav.index {
+  position: sticky;
+  top: calc(env(safe-area-inset-top, 0px) + 1.5rem);
+  align-self: start;
+  font-size: var(--step-0);
+  border-left: 1px solid var(--rule);
+  padding-left: 1rem;
+}
+nav.index p {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  margin: 0 0 0.6rem;
+}
+nav.index ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+nav.index a { color: var(--ink-soft); text-decoration: none; display: block; }
+nav.index a:hover { color: var(--trace); }
+nav.index .n { font-family: var(--font-mono); color: var(--trace); margin-right: 0.4rem; }
+
+main { min-width: 0; max-width: 46rem; }
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--step-0);
+  color: var(--trace);
+  letter-spacing: 0.04em;
+  margin: 0 0 0.6rem;
+}
+h1 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--step-4);
+  line-height: 1.12;
+  margin: 0 0 1.2rem;
+  text-wrap: balance;
+}
+h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--step-3);
+  line-height: 1.2;
+  margin: 3.5rem 0 1rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--rule);
+  text-wrap: balance;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+h2 .num {
+  font-family: var(--font-mono);
+  font-size: var(--step-1);
+  font-weight: 500;
+  color: var(--paper);
+  background: var(--trace);
+  border-radius: 3px;
+  padding: 0.05rem 0.45rem;
+  flex: none;
+}
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--step-2);
+  margin: 2.2rem 0 0.6rem;
+  text-wrap: balance;
+}
+p, li { max-width: 68ch; }
+.lede { font-size: 1.08rem; color: var(--ink); }
+
+/* Board spec strip */
+.spec {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.4rem;
+  font-family: var(--font-mono);
+  font-size: var(--step-0);
+  color: var(--ink-soft);
+  border-block: 1px solid var(--rule);
+  padding-block: 0.7rem;
+  margin: 1.6rem 0;
+}
+.spec b { color: var(--ink); font-weight: 500; }
+
+/* Key results */
+.results {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 1.8rem 0;
+}
+.results div { background: var(--panel); padding: 0.9rem 1rem; min-width: 0; }
+.results strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.results span { font-size: var(--step-0); color: var(--ink-soft); }
+
+.steps { padding-left: 1.3rem; }
+.steps li { margin-bottom: 0.3rem; }
+.steps code { font-size: 0.85em; }
+
+.req {
+  background: var(--panel);
+  border-radius: 6px;
+  padding: 1rem 1.2rem;
+  font-size: 0.92rem;
+  margin: 1.6rem 0;
+}
+.req p { margin: 0.2rem 0; }
+.req b { font-weight: 600; }
+
+/* Code and output */
+code { font-family: var(--font-mono); font-size: 0.88em; background: var(--code-bg); padding: 0.08em 0.3em; border-radius: 3px; }
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  margin: 1rem 0;
+  padding: 0.9rem 1.1rem;
+  overflow-x: auto;
+  border-radius: 6px;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+pre.code { background: var(--code-bg); border: 1px solid var(--rule); }
+pre.out {
+  background: var(--out-bg);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--trace);
+  color: var(--ink-soft);
+}
+.c { color: var(--ink-soft); font-style: italic; }
+.k { color: var(--trace); }
+.s { color: var(--amber); }
+
+/* Figures */
+figure { margin: 1.4rem 0; }
+figure .plate {
+  background: var(--plate);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+figure img { display: block; width: 100%; height: auto; max-width: 100%; }
+figure.narrow .plate { max-width: 34rem; }
+figcaption { font-size: var(--step-0); color: var(--ink-soft); margin-top: 0.45rem; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; margin: 1rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 0.45rem 0.7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--font-display); font-weight: 600; color: var(--ink-soft); border-bottom-color: var(--ink-soft); }
+td.num, th.num { text-align: right; }
+tr.best td { font-weight: 600; }
+
+.callout {
+  border-left: 3px solid var(--amber);
+  background: var(--panel);
+  padding: 0.8rem 1.1rem;
+  border-radius: 0 6px 6px 0;
+  margin: 1.4rem 0;
+}
+.callout p { margin: 0.3rem 0; }
+
+.seealso { font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.9; }
+.seealso code { background: var(--code-bg); }
+ol.refs { padding-left: 1.6rem; font-size: 0.92rem; }
+ol.refs li { margin-bottom: 0.5rem; overflow-wrap: anywhere; }
+footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); font-size: var(--step-0); color: var(--ink-soft); }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  nav.index { position: static; border-left: 0; padding-left: 0; border-bottom: 1px solid var(--rule); padding-bottom: 1rem; margin-bottom: 1.5rem; }
+  nav.index ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 420px) {
+  h1 { font-size: 1.85rem; }
+  nav.index ol { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* PDF / print */
+@page { size: A4; margin: 16mm 15mm 18mm; }
+@media print {
+  :root { --paper: #ffffff; --panel: #f5f5f5; --code-bg: #f5f5f5; }
+  body { font-size: 10.5pt; }
+  .shell { display: block; padding: 0; max-width: none; }
+  nav.index { display: none; }
+  main { max-width: none; }
+  h2 { break-before: page; margin-top: 0; border-top: 0; }
+  h2.keep { break-before: auto; margin-top: 2rem; }
+  h3 { break-after: avoid; }
+  figure, pre, .table-wrap, .results, .callout { break-inside: avoid; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  a { color: var(--ink); }
+}
+.led { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; background: var(--led); margin-right: 0.45em; vertical-align: 0.02em; box-shadow: 0 0 0 1px var(--rule); }
+td:has(> .led) { white-space: nowrap; }
+</style>
+<div class="shell">
+<nav class="index" aria-label="Steps">
+  <p>On this page</p>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#step-1"><span class="n">1</span>Prepare data</a></li>
+    <li><a href="#step-2"><span class="n">2</span>Train the network</a></li>
+    <li><a href="#step-3"><span class="n">3</span>Compress</a></li>
+    <li><a href="#step-4"><span class="n">4</span>Quantize</a></li>
+    <li><a href="#step-5"><span class="n">5</span>Generate code</a></li>
+    <li><a href="#step-6"><span class="n">6</span>Deploy and read digits</a></li>
+    <li><a href="#next">Next steps</a></li>
+  </ol>
+</nav>
+
+<main>
+<p class="eyebrow">MATLAB R2026b · Embedded AI tutorial 4</p>
+<h1>Read Handwritten Digits with a Raspberry Pi 5 Camera Using a Network Trained in MATLAB</h1>
+
+<section id="overview">
+<p class="lede">This example shows how to train, compress, and deploy a handwritten-digit reader from MATLAB® to a Raspberry Pi® 5. You write a digit on a sheet of paper and hold it in front of the Pi camera, and the Pi reports which digit it is, from 0 to 9. The network runs on the Pi as generated C++ code, with no MATLAB on the board.</p>
+
+<p>The example follows the same workflow as the finger-counting tutorial, with a simpler task and cleaner data: the training images come with Deep Learning Toolbox, so nothing needs to be downloaded. The new part is the bridge between a camera and a data set. A camera sees dark ink on white paper under uneven light, while the training images are white digits on a black background and centered. A short function, <code>preprocessFrame</code>, closes that gap, and it runs in MATLAB and on the Pi in exactly the same way.</p>
+
+<div class="spec" aria-label="Setup">
+  <span><b>Raspberry Pi 5</b> 64-bit OS</span>
+  <span><b>Camera Module 3</b> 640 × 480</span>
+  <span><b>10,000</b> digit images</span>
+  <span><b>28 × 28</b> network input</span>
+  <span><b>10</b> classes + "no digit"</span>
+</div>
+
+<div class="results" aria-label="Key results">
+  <div><strong>98.9%</strong><span>test accuracy of the network on the data set images</span></div>
+  <div><strong>−92%</strong><span>parameter memory (93.5 → 7.9 KB, 97.8% after int8)</span></div>
+  <div><strong>163 KB</strong><span>stand-alone program on the Pi</span></div>
+  <div><strong>about 3 ms</strong><span>per frame on the Pi (preparation and network)</span></div>
+</div>
+
+<figure>
+  <div class="plate"><img src="images/workflow.png" alt="Workflow: prepare data, train, compress, quantize, generate code, deploy to the Pi" loading="lazy"></div>
+  <figcaption>The workflow is the same as in the other tutorials.</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><strong>Prepare Data</strong>: load the digit images and split them (<code>Part1_PrepareData.m</code>).</li>
+  <li><strong>Train the Network</strong>: train a small CNN with image augmentation, test it, and look at it with Grad-CAM (<code>Part2_TrainNetwork.m</code>).</li>
+  <li><strong>Compress</strong>: Taylor pruning and projection, each followed by fine-tuning (<code>Part3_CompressNetwork.m</code>).</li>
+  <li><strong>Quantize</strong>: convert the network to 8-bit integers (<code>Part4_QuantizeNetwork.m</code>).</li>
+  <li><strong>Generate Code</strong>: prepare camera frames, generate C++ code, and verify it against MATLAB (<code>Part5_GenerateCode.m</code>).</li>
+  <li><strong>Deploy and Read Digits</strong>: measure the accuracy on your own handwriting, build the program on the Pi, and run it on the camera (<code>Part6_DeployToRaspberryPi.m</code>).</li>
+</ol>
+
+<div class="req">
+  <p><b>Products:</b> Deep Learning Toolbox, Deep Learning Toolbox Model Compression Library, MATLAB Coder, MATLAB Coder Interface for Deep Learning, Embedded Coder, Statistics and Machine Learning Toolbox, and the Raspberry Pi Blockset (from the Add-On Explorer).</p>
+  <p><b>Hardware:</b> Raspberry Pi 5 with Raspberry Pi OS or Debian 13 (64-bit), a Raspberry Pi Camera Module, a network connection between the Pi and your computer, white paper, and a thick black marker. The first connection installs a small MATLAB server on the Pi and may ask you to install some Linux packages with <code>raspisetup</code>.</p>
+</div>
+</section>
+
+<h2 id="step-1"><span class="num">1</span>Prepare Data</h2>
+<p>The data set that comes with Deep Learning Toolbox has 10,000 grayscale images of handwritten digits, 28 × 28 pixels, 1,000 for each digit. The digits are white on a black background.</p>
+
+<pre class="code"><code>dataFolder = fullfile(matlabroot,<span class="s">&quot;toolbox&quot;</span>,<span class="s">&quot;nnet&quot;</span>,<span class="s">&quot;nndemos&quot;</span>,<span class="s">&quot;nndatasets&quot;</span>,<span class="s">&quot;DigitDataset&quot;</span>);
+imds = imageDatastore(dataFolder,IncludeSubfolders=true,FileExtensions=<span class="s">&quot;.png&quot;</span>,LabelSource=<span class="s">&quot;foldernames&quot;</span>);
+[imdsTrain,imdsVal,imdsTest] = splitEachLabel(imds,0.7,0.15,<span class="s">&quot;randomized&quot;</span>);</code></pre>
+<figure class="narrow">
+  <div class="plate"><img src="images/digit-samples.png" alt="Ten digits for each class, white on black" loading="lazy"></div>
+  <figcaption>Ten random images for each digit. The writing styles differ a lot, and some digits look alike (1 and 7, 4 and 9).</figcaption>
+</figure>
+<pre class="out">        Set         Images
+    ____________    ______
+    &quot;Training&quot;       7000
+    &quot;Validation&quot;     1500
+    &quot;Test&quot;           1500</pre>
+<p>The set does not say who wrote each digit, so writers can appear in more than one of the three sets, and the test accuracy is a little better than it would be for a stranger's handwriting. Part 6 measures the accuracy on your own writing.</p>
+
+<h2 id="step-2"><span class="num">2</span>Train the Network</h2>
+<p>The network has three convolution blocks. Each one finds simple patterns (strokes, then curves and corners), and each pooling layer halves the width and height. Global average pooling collapses the last feature maps, and a fully connected layer turns them into ten scores.</p>
+
+<pre class="code"><code>layers = [
+    imageInputLayer([28 28 1],Normalization=<span class="s">&quot;none&quot;</span>)
+    convolution2dLayer(3,16,Padding=<span class="s">&quot;same&quot;</span>)
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer(2,Stride=2)
+    convolution2dLayer(3,32,Padding=<span class="s">&quot;same&quot;</span>)
+    batchNormalizationLayer
+    reluLayer
+    maxPooling2dLayer(2,Stride=2)
+    convolution2dLayer(3,64,Padding=<span class="s">&quot;same&quot;</span>)
+    batchNormalizationLayer
+    reluLayer
+    globalAveragePooling2dLayer
+    dropoutLayer(0.2)
+    fullyConnectedLayer(10)
+    softmaxLayer];</code></pre>
+<p>A digit that you write on paper and hold in front of a camera is a little rotated, slanted, larger or smaller, and not perfectly centered. Random rotation, shearing, scaling, and shifting of the training images teach the network to cope with this.</p>
+<pre class="code"><code>augmenter = imageDataAugmenter(RandRotation=[-12 12],RandXShear=[-12 12], ...
+    RandScale=[0.8 1.2],RandXTranslation=[-3 3],RandYTranslation=[-3 3]);
+dsTrain = augmentedImageDatastore([28 28 1],XTrain,labelsTrain,DataAugmentation=augmenter);
+[net,info] = trainnet(dsTrain,layers,<span class="s">&quot;crossentropy&quot;</span>,options);</code></pre>
+<p>MATLAB opens the <strong>training-progress window</strong> while <code>trainnet</code> runs. On a laptop CPU, the 30 epochs take about a minute.</p>
+<figure>
+  <div class="plate"><img src="images/training-progress.png" alt="MATLAB training-progress window with accuracy and loss curves" loading="lazy"></div>
+  <figcaption>Training progress of one run. The validation curve is unsteady at first and settles near 98–99%, with an occasional dip. <code>OutputNetwork="best-validation"</code> returns the network at the black dot.</figcaption>
+</figure>
+<pre class="code"><code>accuracyTest = testnet(net,XTest,labelsTest,<span class="s">&quot;accuracy&quot;</span>)
+predicted = onehotdecode(minibatchpredict(net,XTest),classNames,2);
+confusionchart(labelsTest,predicted)</code></pre>
+<pre class="out">accuracyTest = 98.9333
+accuracyVal  = 98.8667
+
+Accuracy of each digit on the test set (%):
+  0      1      2      3      4      5      6      7      8      9
+100.0   98.0   96.7  100.0   98.7  100.0  100.0   97.3  100.0   98.7</pre>
+<figure class="narrow">
+  <div class="plate"><img src="images/confusion.png" alt="Confusion chart on the test set" loading="lazy"></div>
+  <figcaption>Test set confusion chart.</figcaption>
+</figure>
+<p>The test accuracy is high because the test images are written in the same styles as the training images. It is not a promise about your handwriting, your pen, and the camera.</p><p><strong>Grad-CAM</strong> highlights the pixels that raised the score of the predicted class: the network looks at the strokes of the digit.</p>
+<pre class="code"><code>map = gradCAM(net,XTest(:,:,:,idx),predicted(idx));</code></pre>
+<figure>
+  <div class="plate"><img src="images/gradcam.png" alt="Grad-CAM maps for ten test digits" loading="lazy"></div>
+  <figcaption>Grad-CAM for one test digit of each class. The maps are coarse, because the images are only 28 × 28 pixels.</figcaption>
+</figure>
+
+<h2 id="step-3"><span class="num">3</span>Compress</h2>
+<p>Two steps make the network smaller: <strong>Taylor pruning</strong> removes the convolution filters that matter least, and <strong>projection</strong> replaces each layer with two smaller layers that keep its principal directions. Each step is followed by fine-tuning with the same augmentation.</p>
+
+<pre class="code"><code>[netPruned,infoPruned] = compressNetworkUsingTaylorPruning(net,XTrain,labelsTrain,<span class="s">&quot;crossentropy&quot;</span>,optionsPruning, ...
+    LearnablesReductionGoal=0.5,LearnablesReductionIncrement=0.05);
+netPruned = trainnet(dsTrain,netPruned,<span class="s">&quot;crossentropy&quot;</span>,optionsFineTune);
+
+[netProjected,infoProjected] = compressNetworkUsingProjection(netPruned,XTrain,LearnablesReductionGoal=0.3);
+netProjected = trainnet(dsTrain,netProjected,<span class="s">&quot;crossentropy&quot;</span>,optionsFineTune);</code></pre>
+<pre class="out">          Stage           Learnables    Memory (KB)    Test accuracy (%)
+    __________________    __________    ___________    _________________
+    Original                23946         93.539            98.93
+    Pruned                  11513         44.973            99.67
+    Pruned + projected       7864         30.719            99.33</pre>
+<p>Projection with a goal of 50% reduced the accuracy to 96.8% in a first try, so this example removes a gentler 30%. Fine-tuning is also extra training, so a compressed network can score as well as the original, or even a little better.</p>
+
+<h2 id="step-4"><span class="num">4</span>Quantize</h2>
+<p><strong>Quantization</strong> stores the weights and activations as 8-bit integers instead of 32-bit floating-point numbers. A calibration step runs training images through the network to find the range of values in every layer.</p>
+
+<pre class="code"><code>quantObj = dlquantizer(netCompressed,ExecutionEnvironment=<span class="s">&quot;MATLAB&quot;</span>);
+prepareNetwork(quantObj);
+calibrate(quantObj,augmentedImageDatastore([28 28 1],XTrain(:,:,:,1:3:end)));
+netQ = quantize(quantObj,ExponentScheme=<span class="s">&quot;histogram&quot;</span>);</code></pre>
+<pre class="out">                    Stage                    Learnables    Parameter memory (KB)    Test accuracy (%)
+    Original (float32)                          23946              93.54                   98.93
+    Pruned + projected (float32)                 7864              30.72                   99.33
+    Pruned + projected + quantized (int8)        7681               7.93                   97.80
+
+agreement = 98.2       % % of test images where the int8 and float32 networks give the same answer</pre>
+<figure>
+  <div class="plate"><img src="images/compression.png" alt="Network size, parameter memory, and test accuracy after each step" loading="lazy"></div>
+  <figcaption>Size, parameter memory, and test accuracy after each step. The memory falls by 92%.</figcaption>
+</figure>
+
+<h2 id="step-5"><span class="num">5</span>Generate Code</h2>
+<p>The Raspberry Pi does not run MATLAB. MATLAB Coder translates a MATLAB function, together with the quantized network, into C++ code that the Pi compiles and runs on its own. Code generation starts from one function, <code>digitDetect</code>. It takes a 480 × 640 camera frame, prepares it with <code>preprocessFrame</code>, runs the network, and returns the digit and the ten probabilities. If nothing is written in the middle of the frame, it returns −1: "no digit".</p>
+
+<pre class="code"><code>function [digit,probabilities] = digitDetect(frame) <span class="c">%#codegen</span>
+persistent net
+if isempty(net)
+    net = coder.loadDeepLearningNetwork(<span class="s">&quot;models/netQ.mat&quot;</span>);
+end
+x = preprocessFrame(frame);                                  <span class="c">% 28 x 28, ink = 1, paper = 0</span>
+if ~any(x(:))                                                <span class="c">% blank paper</span>
+    digit = int32(-1);
+    probabilities = zeros(10,1,<span class="s">&quot;single&quot;</span>);
+    return
+end
+probabilities = extractdata(predict(net,dlarray(x,<span class="s">&quot;SSCB&quot;</span>)));
+[~,k] = max(probabilities);
+digit = int32(k - 1);
+end</code></pre>
+<p>The input is labeled <code>"SSCB"</code> (spatial, spatial, channel, batch): code generation for quantized pooling layers requires the batch dimension, even for a single image.</p>
+<h3>Prepare the Camera Frame</h3>
+<p>The camera sees dark ink on white paper, but the network was trained on white digits on a black background, and on digits that are centered. <code>preprocessFrame</code> bridges the difference in four steps. It keeps the centered 448 × 448 square of the frame, and averages 16 × 16 blocks of pixels to get 28 × 28. It estimates the paper with a morphological closing (a maximum filter followed by a minimum filter): the closing removes the thin dark strokes of the ink but keeps a smooth change of the light across the paper, so a shadow or a gradient is not mistaken for ink. The paper becomes 0 and the ink becomes values up to 1. Finally, it moves the center of mass of the ink to the center of the image. It uses only basic array operations, so MATLAB and the Pi prepare the images in exactly the same way.</p>
+
+<figure>
+  <div class="plate"><img src="images/preprocessing.png" alt="A digit on paper, with shading, and a dark scene, with what the network sees" loading="lazy"></div>
+  <figcaption>Left: a digit on white paper. Middle: the same digit with strong shading across the paper. Right: a dark scene without a digit, which gives an empty image and the result "no digit".</figcaption>
+</figure>
+<p>To test the complete function on all 1,500 test digits, each digit is enlarged 16 times, drawn as dark ink on white paper, and placed in the center of a 480 × 640 frame. Then build a MEX function with the same deep learning settings, and compare it with MATLAB:</p>
+<pre class="code"><code>mexCfg = coder.config(<span class="s">&quot;mex&quot;</span>);
+mexCfg.DeepLearningConfig = coder.DeepLearningConfig(TargetLibrary=<span class="s">&quot;none&quot;</span>);
+mexCfg.LargeConstantGeneration = <span class="s">&quot;KeepInSourceFiles&quot;</span>;
+codegen -config mexCfg digitDetect -args {zeros(480,640,3,<span class="s">&quot;uint8&quot;</span>)} -o digitDetect_mex</code></pre>
+<pre class="out">accuracyFunction = 95.9333      % the whole function on the test frames
+digitBlank = -1                  % a blank sheet gives &quot;no digit&quot;
+digitAgreement = 1               % the MEX function gives the same digit for every frame
+maxDifference = 0                % and the same probabilities</pre>
+<p>The whole function scores 95.9%, a little less than the network alone: turning a digit into a photograph and back changes a few pixels. Then generate the C++ library for a 64-bit ARM processor. <code>TargetLibrary="none"</code> produces plain C++ without third-party libraries, and <code>LargeConstantGeneration="KeepInSourceFiles"</code> puts the network weights in the source files.</p>
+<pre class="code"><code>cfg = coder.config(<span class="s">&quot;lib&quot;</span>);
+cfg.TargetLang = <span class="s">&quot;C++&quot;</span>;
+cfg.GenCodeOnly = true;
+cfg.DeepLearningConfig = coder.DeepLearningConfig(TargetLibrary=<span class="s">&quot;none&quot;</span>);
+cfg.LargeConstantGeneration = <span class="s">&quot;KeepInSourceFiles&quot;</span>;
+cfg.HardwareImplementation.ProdHWDeviceType = &quot;ARM Compatible-&gt;ARM 64-bit (LP64)<span class="s">&quot;;
+codegen -config cfg digitDetect -args {zeros(480,640,3,&quot;</span>uint8&quot;)} -d codegen/lib -report</code></pre>
+<pre class="code"><code>extern void digitDetect(const unsigned char frame[921600], int *digit,
+                        float probabilities[10]);</code></pre>
+
+<h2 id="step-6"><span class="num">6</span>Deploy and Read Digits</h2>
+
+<h3>Connect to the Raspberry Pi</h3>
+<p>Install the <strong>Raspberry Pi Blockset</strong> from the Add-On Explorer. Define the connection details in the Command Window, so that your password is never saved in a script, and connect with <code>raspi</code>.</p>
+
+<pre class="code"><code>piAddress = <span class="s">&quot;raspberrypi.local&quot;</span>;
+piUser = <span class="s">&quot;pi&quot;</span>;
+piPassword = <span class="s">&quot;...&quot;</span>;            <span class="c">% type your password in the Command Window only</span>
+r = raspi(piAddress,piUser,piPassword)</code></pre>
+<h3>Prepare the Paper and the Camera View</h3>
+<p>Write a digit in the middle of a white sheet with a <strong>thick black marker or a thick dark pen</strong>, as large as the green square allows. The network sees only the centered square of the camera frame. Thin pencil strokes, a small digit, or a sheet that is moved make the result worse. Light the paper evenly and hold it still.</p>
+
+<pre class="code"><code>cam = cameraboard(r,<span class="s">&quot;Resolution&quot;</span>,<span class="s">&quot;640x480&quot;</span>);
+frame = snapshot(cam);
+imshow(frame)
+rectangle(Position=[97 17 448 448],EdgeColor=<span class="s">&quot;g&quot;</span>,LineWidth=3)
+imshow(preprocessFrame(frame))      <span class="c">% what the network sees</span></code></pre>
+<h3>Measure Your Accuracy</h3>
+<p>The test set of Step 2 contains digits written like the training digits. Your handwriting, your pen, and the camera are different. This section of <code>Part6_DeployToRaspberryPi.m</code> measures how well the network reads <em>your</em> digits: for each digit from 0 to 9, it counts you down for 8 seconds, so that you can put the next sheet in the green square, and takes five pictures. The pictures are read with the MEX function from Step 5, and the section prints the accuracy and draws a confusion chart.</p>
+<div class="callout">
+  <p><strong>This tutorial does not give a number for the accuracy on a camera.</strong> It depends on your pen, your handwriting, the paper, and the light, and the reference run of this tutorial did not measure it. Measure it yourself with this section before you rely on the program. Frames from a camera can differ from the training images in ways that the preparation of the frame cannot fully remove.</p>
+</div>
+
+<h3>Build the Program on the Pi</h3>
+<p><code>digitReaderApp</code> is the program for the Pi. It creates the camera, then grabs frame after frame and calls <code>digitDetect</code> on each, until it is stopped.</p>
+
+<pre class="code"><code>function digitReaderApp() <span class="c">%#codegen</span>
+r = raspi;
+cam = cameraboard(r,<span class="s">&quot;Resolution&quot;</span>,<span class="s">&quot;640x480&quot;</span>);
+k = int32(0);
+while true
+    k = k + 1;
+    frame = snapshot(cam);
+    t0 = tic;
+    [digit,probabilities] = digitDetect(frame);
+    ms = toc(t0)*1000;
+    if digit &lt; 0
+        fprintf(<span class="s">&quot;frame <span class="c">%2d: no digit  (%5.1f ms)\n&quot;</span>,k,ms);</span>
+    else
+        fprintf(<span class="s">&quot;frame <span class="c">%2d: digit %d  (confidence %3.0f%%, %5.1f ms)\n&quot;</span>,k,digit,100*max(probabilities),ms);</span>
+    end
+    pause(0.1);                    <span class="c">% about 10 frames per second, and no busy loop</span>
+end
+end</code></pre>
+<p>Configure code generation for a stand-alone program on a 64-bit Raspberry Pi. MATLAB generates the C++ code on your computer, copies it to the Pi, and builds it there with the compiler on the Pi. The board type must match the operating system: <code>Raspberry Pi (64bit)</code> for a 64-bit system, and <code>Raspberry Pi</code> for a 32-bit system. MATLAB warns that the program does not end: that is intended.</p>
+<pre class="code"><code>hw = coder.hardware(<span class="s">&quot;Raspberry Pi (64bit)&quot;</span>);
+hw.DeviceAddress = r.DeviceAddress;  hw.Username = piUser;  hw.Password = piPassword;
+hw.BuildDir = <span class="s">&quot;/home/&quot;</span> + piUser + <span class="s">&quot;/MATLAB_ws/digitreader&quot;</span>;
+cfg = coder.config(<span class="s">&quot;exe&quot;</span>);
+cfg.Hardware = hw;
+cfg.GenerateExampleMain = <span class="s">&quot;GenerateCodeAndCompile&quot;</span>;
+cfg.DeepLearningConfig = coder.DeepLearningConfig(TargetLibrary=<span class="s">&quot;none&quot;</span>);
+cfg.LargeConstantGeneration = <span class="s">&quot;KeepInSourceFiles&quot;</span>;
+codegen -config cfg digitReaderApp -d codegen/pi -report</code></pre>
+<h3>Run It on the Camera</h3>
+<p>Start the program on the board for 20 seconds, show a digit to the camera, and change it every few seconds. The <code>timeout -s KILL 20</code> command stops the program after 20 seconds, and <code>stdbuf -oL</code> sends each line as soon as it is printed.</p>
+
+<pre class="code"><code>program = strtrim(string(system(r,<span class="s">&quot;find /home/&quot;</span> + piUser + <span class="s">&quot;/MATLAB_ws/digitreader -name digitReaderApp.elf | head -1&quot;</span>)));
+output = system(r,&quot;cd &#x27;<span class="s">&quot; + fileparts(program) + &quot;</span>&#x27; &amp;&amp; stdbuf -oL timeout -s KILL 20 ./digitReaderApp.elf 2&gt;/dev/null; true<span class="s">&quot;);
+system(r,&quot;</span>pkill -9 -f &#x27;[d]igitReaderApp.elf&#x27;; true&quot;);     <span class="c">% make sure that no copy of the program keeps running</span>
+disp(output)</code></pre>
+<pre class="out">frame  1: no digit  (  0.8 ms)
+frame  2: no digit  (  0.7 ms)
+frame  3: no digit  (  0.7 ms)
+...</pre>
+<p>The first lines are from a run in a dark scene without a digit, which gives "no digit". When a digit is in the square, a line has the form <code>frame 12: digit 7  (confidence  97%,   3.1 ms)</code>, with the digit, the confidence, and the time. With a digit, the preparation of the frame and the network take about 3 ms on the Pi 5, so the loop is limited by the camera and the pause, at about 10 frames per second.</p>
+<p>To use it live without a time limit, open a terminal on your computer, log in to the Pi with <code>ssh</code>, go to the program folder, and start <code>./digitReaderApp.elf 2&gt;/dev/null</code>. Each line appears while the program runs, and Ctrl+C stops it.</p>
+<p>The program is small, and it uses little memory:</p>
+
+<pre class="out">programKB = 162.8
+peakMemory = VmHWM:    28048 kB          % includes the camera libraries</pre>
+<div class="callout">
+  <p><strong>Things that make it worse.</strong> A thin or light pen, a digit that does not fill the green square, a sheet that moves, strong shadows across the paper, and other dark marks in the square (a fold, a printed line, the edge of the sheet) can all be read as strokes of a digit. Digits that look alike (1 and 7, 4 and 9, 3 and 5) are the most likely to be confused. Blank paper gives "no digit".</p>
+</div>
+
+<h2 id="next">Next Steps</h2>
+<ul>
+  <li><strong>Measure and improve:</strong> measure your accuracy with the last section of Part 6, look at the confusion chart, and find out whether the pen, the light, or the size of the digit is the problem. Record your own digits with the Pi camera and add them to the training data to close the gap.</li>
+  <li><strong>More training data:</strong> train on the 70,000 images of the MNIST data set, which has many more writers.</li>
+  <li><strong>Digits in a row:</strong> read a number with several digits by splitting the frame into cells.</li>
+  <li><strong>Transfer learning:</strong> start from a pretrained network (a support package in the Add-On Explorer) for a harder task, such as letters.</li>
+</ul>
+
+<h3>See Also</h3>
+<p class="seealso"><code>raspi</code> · <code>cameraboard</code> · <code>trainnet</code> · <code>testnet</code> · <code>imageDataAugmenter</code> · <code>gradCAM</code> · <code>compressNetworkUsingTaylorPruning</code> · <code>compressNetworkUsingProjection</code> · <code>dlquantizer</code> · <code>codegen</code> · <code>coder.hardware</code> · <code>coder.loadDeepLearningNetwork</code></p>
+
+<h3>Related Examples</h3>
+<ul>
+  <li><a href="../03-finger-counting-on-raspberry-pi/README.md">Tutorial 3: Count Fingers with a Raspberry Pi 5 Camera Using a Network Trained in MATLAB</a></li>
+  <li><a href="https://www.mathworks.com/help/coder/ug/code-generation-for-quantized-deep-learning-network-on-raspberry-pi.html">Code Generation for Quantized Deep Learning Network on Raspberry Pi</a></li>
+</ul>
+
+<footer>Results from a full run on MATLAB R2026b with a Raspberry Pi 5 (Debian 13, 64-bit) and a Camera Module 3. Data: the digit data set that comes with Deep Learning Toolbox. This is an independent tutorial and is not affiliated with MathWorks or Raspberry Pi Ltd. MATLAB is a registered trademark of The MathWorks, Inc.; Raspberry Pi is a trademark of Raspberry Pi Ltd.</footer>
+</main>
+</div>
