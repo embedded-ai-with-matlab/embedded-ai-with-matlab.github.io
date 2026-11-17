@@ -279,6 +279,8 @@ td:has(> .led) { white-space: nowrap; }
     <li><a href="#step-4"><span class="n">4</span>Quantize</a></li>
     <li><a href="#step-5"><span class="n">5</span>Generate code</a></li>
     <li><a href="#step-6"><span class="n">6</span>Deploy and run</a></li>
+    <li><a href="#step-7"><span class="n">7</span>Transfer learning</a></li>
+    <li><a href="#step-8"><span class="n">8</span>Deploy transfer network</a></li>
     <li><a href="#next">Next steps</a></li>
   </ol>
 </nav>
@@ -320,6 +322,7 @@ td:has(> .led) { white-space: nowrap; }
   <li><strong>Quantize</strong>: convert the network to 8-bit integers (<code>Part4_QuantizeNetwork.m</code>).</li>
   <li><strong>Generate Code</strong>: generate C++ code and verify it against MATLAB (<code>Part5_GenerateCode.m</code>).</li>
   <li><strong>Deploy and Run</strong>: build the program on the Pi and run it on the camera (<code>Part6_DeployToRaspberryPi.m</code>).</li>
+  <li><strong>Continuation: Transfer Learning</strong>: start from the pretrained SqueezeNet, prune it, and run it on the Pi (<code>Part7_TransferLearning.m</code> and <code>Part8_DeployTransferNetwork.m</code>).</li>
 </ol>
 
 <div class="req">
@@ -645,11 +648,111 @@ peakMemory = VmHWM:    50656 kB</pre>
   <p><strong>Read these results with care.</strong> There is no "no hand" class: the network always answers with a number from 0 to 5, and it can be confident about it even when the camera sees only the ceiling, as in the run above. The network was trained on tight crops around a hand, so it works best when the hand fills most of the green square. And the accuracy of 59–67% on held-out recording groups says that a new camera, a new room, and your own hand can make it worse or better: try 0 to 5 fingers and count how often it is right.</p>
 </div>
 
+
+<h2 id="step-7"><span class="num">7</span>Continuation: Improve the Result with Transfer Learning</h2>
+<p>The small CNN of Step 2 learns from about 1,200 hands, and it ends at 59% on the test groups. A network that was <strong>already trained on a million photos</strong> has learned edges, textures, and shapes that also help to see fingers. <strong>Transfer learning</strong> starts from such a network, replaces its last layer with one for six classes, and trains it on your hands. This continuation uses <strong>SqueezeNet</strong>, a small network that comes with Deep Learning Toolbox, on the same data, the same split, and the same 247 test hands.</p>
+
+<figure>
+  <div class="plate"><img src="images/transfer-network.png" alt="SqueezeNet and one of its fire modules" loading="lazy"></div>
+  <figcaption>SqueezeNet, and one of its fire modules.</figcaption>
+</figure>
+<p>SqueezeNet was trained on 227 × 227 images, but it is fully convolutional, so it also works on the 96 × 96 hand crops. <code>imagePretrainedNetwork</code> returns the network with its last learnable layer already replaced by one with six outputs, and the input layer is replaced to set the size. SqueezeNet expects pixel values from 0 to 255, so the images are not divided by 255 here.</p>
+<pre class="code"><code>net0 = imagePretrainedNetwork(<span class="s">&quot;squeezenet&quot;</span>,NumClasses=6);
+inputLayer = net0.Layers(1);
+net0 = dlnetwork(replaceLayer(layerGraph(net0),inputLayer.Name, ...
+    imageInputLayer([96 96 3],Normalization=<span class="s">&quot;zerocenter&quot;</span>,Mean=inputLayer.Mean,Name=inputLayer.Name)));
+options = trainingOptions(<span class="s">&quot;adam&quot;</span>,MaxEpochs=12,MiniBatchSize=32,InitialLearnRate=1e-4, ...
+    ValidationData=dsVal,ValidationFrequency=20,Metrics=<span class="s">&quot;accuracy&quot;</span>,Shuffle=<span class="s">&quot;every-epoch&quot;</span>, ...
+    OutputNetwork=<span class="s">&quot;best-validation&quot;</span>,Plots=<span class="s">&quot;training-progress&quot;</span>);
+[netTransfer,info] = trainnet(dsTrain,net0,<span class="s">&quot;crossentropy&quot;</span>,options);</code></pre>
+<figure>
+  <div class="plate"><img src="images/transfer-training-progress.png" alt="Training progress of SqueezeNet" loading="lazy"></div>
+  <figcaption>Training progress of one run. The validation accuracy rises steadily to about 88%, far more smoothly than for the network trained from scratch.</figcaption>
+</figure>
+<p>The script trains the network with three random seeds. Part 2 showed that the small CNN scores anywhere between about 40% and 70%, depending on the seed:</p>
+<pre class="out">    Seed    TestAccuracy
+    ____    ____________
+     1         76.923
+     2         86.235
+     3         77.328
+meanAccuracy = 80.1619</pre>
+<p>All three seeds are better than the small CNN (58.7%), with a mean of 80.2%. The results still vary from seed to seed, by about 10 points, so the test set (247 hands) cannot rank small differences. In an earlier experiment with the same network, the seeds reached 85–88%.</p>
+<figure>
+  <div class="plate"><img src="images/transfer-comparison.png" alt="Test accuracy and parameter memory of the networks" loading="lazy"></div>
+  <figcaption>Test accuracy and parameter memory of the networks.</figcaption>
+</figure>
+<h3>Prune the Transfer-Learning Network</h3>
+<p>SqueezeNet has 726,000 learnable parameters, three times as many as the small CNN. Taylor pruning removes the filters that matter least, and fine-tuning recovers the accuracy.</p>
+<pre class="code"><code>[netPruned,infoPruned] = compressNetworkUsingTaylorPruning(netTransfer,XTrain,labelsTrain,<span class="s">&quot;crossentropy&quot;</span>,optionsPruning, ...
+    LearnablesReductionGoal=0.5,LearnablesReductionIncrement=0.1);
+netPruned = trainnet(dsTrain,netPruned,<span class="s">&quot;crossentropy&quot;</span>,optionsFineTune);</code></pre>
+<pre class="out">          Network           Learnables    Memory (KB)    Test accuracy (%)
+    ____________________    __________    ___________    _________________
+    Small CNN (Part 2)        241606         943.8              58.70
+    SqueezeNet                725574        2834.3              76.92
+    SqueezeNet, pruned        362718        1416.9              89.88</pre>
+<p>The pruned network scores 89.9% on the test groups. Do not read this as "pruning improves the accuracy": the fine-tuning after pruning is also extra training, and the test set is small. What the table shows reliably is that the pruned network needs half of the parameter memory of the unpruned one, and that it is at least as accurate. Projection, which was part of the recipe in Step 3, did not work for SqueezeNet: in a test, the accuracy fell from 87% to 76%, so it is not used here.</p>
+<figure>
+  <div class="plate"><img src="images/transfer-per-class.png" alt="Test accuracy of each class for the three networks" loading="lazy"></div>
+  <figcaption>Test accuracy of each class: the small CNN, SqueezeNet, and the pruned SqueezeNet.</figcaption>
+</figure>
+<figure class="narrow">
+  <div class="plate"><img src="images/transfer-confusion.png" alt="Confusion chart of the pruned SqueezeNet" loading="lazy"></div>
+  <figcaption>Confusion chart of the pruned SqueezeNet on the test set.</figcaption>
+</figure>
+<p>The weakest classes are 3 and 5 fingers (76% and 77%). The small CNN was at 12% for 1 finger and for 3 fingers. <strong>Grad-CAM</strong> for the pruned network shows where it looks:</p>
+<figure>
+  <div class="plate"><img src="images/transfer-gradcam.png" alt="Grad-CAM for six test hands with the pruned SqueezeNet" loading="lazy"></div>
+  <figcaption>Grad-CAM for six test hands. The network looks at the hand and its fingers.</figcaption>
+</figure>
+<div class="callout">
+  <p><strong>What about int8?</strong> <code>dlquantizer</code> quantizes SqueezeNet to int8 without errors, but running the quantized network in MATLAB, which is needed to measure its accuracy, calls <code>padarray</code> from the Image Processing Toolbox. Without that toolbox, the int8 accuracy cannot be checked, so the network stays in float32 here. At 1.4 MB for the weights, it is small for a Raspberry Pi 5.</p>
+</div>
+
+<h2 id="step-8"><span class="num">8</span>Continuation: Deploy the Transfer-Learning Network</h2>
+<p><code>Part8_DeployTransferNetwork.m</code> follows Steps 5 and 6; only the network and the preparation of the frame change. <code>fingerCountDetectTransfer</code> loads the pruned SqueezeNet, and <code>preprocessFrameTransfer</code> keeps the values between 0 and 255, as SqueezeNet expects.</p>
+<pre class="code"><code>function [count,probabilities] = fingerCountDetectTransfer(frame) <span class="c">%#codegen</span>
+persistent net
+if isempty(net)
+    net = coder.loadDeepLearningNetwork(<span class="s">&quot;models/netTransfer.mat&quot;</span>);
+end
+x = preprocessFrameTransfer(frame);                          <span class="c">% 96 x 96 x 3, values 0 to 255</span>
+probabilities = extractdata(predict(net,dlarray(x,<span class="s">&quot;SSCB&quot;</span>)));
+[~,k] = max(probabilities);
+count = int32(k - 1);
+end</code></pre>
+<p>As in Step 5, each test crop is placed in a camera frame, and the MEX function is compared with MATLAB on all 247 test hands:</p>
+<pre class="out">accuracyFunction = 89.8785
+countAgreement = 1
+maxDifference = 3.0398e-06</pre>
+<p>The generated code gives the same counts as MATLAB, and the probabilities differ only by rounding error. Then the script builds the program on the Pi, exactly as in Step 6 (<code>fingerCounterAppTransfer</code> is the counterpart of <code>fingerCounterApp</code>), and runs it for 12 seconds:</p>
+<pre class="out">frame  1: 4 fingers  (confidence  53%,  27.9 ms)
+frame  2: 4 fingers  (confidence  71%,  22.6 ms)
+frame  3: 4 fingers  (confidence  73%,  24.1 ms)
+...
+meanTimeMs = 24.4635
+programKB = 1575.2
+peakMemory = VmHWM: 53424 kB</pre>
+<div class="table-wrap"><table>
+  <thead><tr><th></th><th>Small CNN, int8 (Step 6)</th><th>Pruned SqueezeNet, float32 (Step 8)</th></tr></thead>
+  <tbody>
+    <tr><td>Test accuracy (247 hands, new groups)</td><td class="num">58.7%</td><td class="num">89.9%</td></tr>
+    <tr><td>Time per frame on the Pi 5 (preparation and network)</td><td class="num">about 60 ms</td><td class="num">about 24 ms</td></tr>
+    <tr><td>Program size</td><td class="num">227 KB</td><td class="num">1.6 MB</td></tr>
+    <tr><td>Peak memory of the program</td><td class="num">about 51 MB</td><td class="num">about 53 MB</td></tr>
+  </tbody>
+</table></div>
+<p>The transfer-learning network is more accurate <strong>and</strong> faster on the Pi, even though it is larger. A likely reason is that SqueezeNet needs fewer multiply-accumulate operations at 96 × 96 (about 43 million before pruning, against about 114 million for the small CNN), and that the int8 code of the small network, which is plain C++ without special instructions, is not faster than float32 on this board. The second reason was not tested.</p>
+<div class="callout">
+  <p><strong>There is still no "no hand" class.</strong> Like the small CNN, this network always answers with a number. Cover the lens, or point the camera at a plain wall, and it can still report a finger count with a fairly high confidence (in a test: "4 fingers" at about 70% for a plain grey wall). The confidence is not a reliable hand detector. To fix this, add a "no hand" class with photos of empty scenes.</p>
+</div>
+
+
 <h2 id="next">Next Steps</h2>
 <ul>
   <li><strong>Record your own images</strong> with the Pi camera. <code>captureFingerSession</code> in the <code>helpers</code> folder counts you down and saves images for each finger count through <code>cameraboard</code>. Record several sessions with different light, backgrounds, and hands, add them to Part 1, and train again: data from the camera that runs the model is the most reliable fix for the instability above.</li>
   <li><strong>Add a "no hand" class</strong> with photos of empty scenes, so that the network can say "nothing".</li>
-  <li><strong>Use transfer learning</strong> from a pretrained network such as MobileNet-v2 (a support package in the Add-On Explorer), which needs far fewer images to reach a stable accuracy.</li>
+  <li><strong>int8 for SqueezeNet:</strong> install the Image Processing Toolbox, check the accuracy of the quantized SqueezeNet, and measure the time per frame on the Pi.</li>
   <li><strong>Collect a hand-only test</strong>: test the model on sessions that were not used for training, and report the accuracy of each class, not only one number.</li>
 </ul>
 

@@ -17,6 +17,8 @@ A camera on a Raspberry Pi 5 watches a hand, and the Pi reports how many fingers
 | 4 | `Part4_QuantizeNetwork.m` | Quantize the network to int8 |
 | 5 | `Part5_GenerateCode.m` | Generate C++ code and check it against MATLAB |
 | 6 | `Part6_DeployToRaspberryPi.m` | Build and run the program on the Pi with its camera |
+| 7 | `Part7_TransferLearning.m` | Optional continuation: transfer learning from the pretrained SqueezeNet, with pruning |
+| 8 | `Part8_DeployTransferNetwork.m` | Optional continuation: generate code for the SqueezeNet and run it on the Pi |
 
 Run the scripts in order. Each script saves what the next one needs in `data/` and `models/`.
 
@@ -40,3 +42,15 @@ From one reference run on MATLAB R2026b and a Raspberry Pi 5 with a Camera Modul
 | Time per frame on the Pi (preparation and network) | about 60 ms |
 
 The accuracy numbers are unstable. The test set is small, and training with another random seed can move the result by 10 to 30 percentage points. The network has no "no hand" class, so it also names a finger count when it sees no hand. Measure the accuracy on your own camera, with your own hand, in Part 6.
+
+## Continuation: transfer learning (Parts 7 and 8)
+
+Starting from the pretrained SqueezeNet (96 × 96 input, last layer replaced) instead of the small CNN, on the same data, split, and 247 test hands:
+
+| Network | Learnables | Parameter memory | Test accuracy |
+|---|---|---|---|
+| Small CNN from scratch (Part 2) | 241,606 | 944 KB | 58.7% |
+| SqueezeNet, fine-tuned (3 seeds) | 725,574 | 2.8 MB | 76.9%, 86.2%, 77.3% (mean 80.2%) |
+| SqueezeNet, pruned by 50% | 362,718 | 1.4 MB | 89.9% |
+
+On the Raspberry Pi 5, the pruned SqueezeNet (float32, generated C++) needs about 24 ms per frame (the small int8 CNN: about 60 ms), the program is 1.6 MB, and its peak memory is about 53 MB. The generated code gives the same counts as MATLAB for all 247 test hands. Projection did not work for SqueezeNet (87% fell to 76% in a test). int8 quantization works, but its accuracy cannot be checked in MATLAB without the Image Processing Toolbox, so the network stays in float32. As before, there is no "no hand" class.
