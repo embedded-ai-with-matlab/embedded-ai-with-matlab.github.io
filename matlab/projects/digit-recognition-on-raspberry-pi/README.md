@@ -13,6 +13,7 @@ You write a digit on a sheet of paper and hold it in front of the Raspberry Pi c
 |---|---|---|
 | 1 | `Part1_PrepareData.m` | Load the 10,000 digit images and split them |
 | 2 | `Part2_TrainNetwork.m` | Train the CNN with augmentation, test it, and look at it with Grad-CAM |
+| 3 | `Part3a_ExploreCompression.m` | Optional: analyze the network for compression, and measure the accuracy of pruning and projection at increasing strength |
 | 3 | `Part3_CompressNetwork.m` | Prune and project the network, with fine-tuning |
 | 4 | `Part4_QuantizeNetwork.m` | Quantize the network to int8 |
 | 5 | `Part5_GenerateCode.m` | Prepare camera frames, generate C++ code, and verify it against MATLAB |

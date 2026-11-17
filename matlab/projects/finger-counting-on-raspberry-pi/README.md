@@ -12,6 +12,7 @@ A camera on a Raspberry Pi 5 watches a hand, and the Pi reports how many fingers
 |---|---|---|
 | 1 | `Part1_PrepareData.m` | Download the Hands Dataset, cut out the hands, and split by recording group |
 | 2 | `Part2_TrainNetworks.m` | Train the CNN with augmentation, test it, and look at it with Grad-CAM |
+| 3 | `Part3a_ExploreCompression.m` | Optional: analyze the network for compression, and measure the accuracy of pruning and projection at increasing strength |
 | 3 | `Part3_CompressClassifier.m` | Prune and project the network, with fine-tuning |
 | 4 | `Part4_QuantizeNetwork.m` | Quantize the network to int8 |
 | 5 | `Part5_GenerateCode.m` | Generate C++ code and check it against MATLAB |

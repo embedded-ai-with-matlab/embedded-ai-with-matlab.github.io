@@ -315,7 +315,7 @@ td:has(> .led) { white-space: nowrap; }
 <ol class="steps">
   <li><strong>Prepare Data</strong>: load the digit images and split them (<code>Part1_PrepareData.m</code>).</li>
   <li><strong>Train the Network</strong>: train a small CNN with image augmentation, test it, and look at it with Grad-CAM (<code>Part2_TrainNetwork.m</code>).</li>
-  <li><strong>Compress</strong>: Taylor pruning and projection, each followed by fine-tuning (<code>Part3_CompressNetwork.m</code>).</li>
+  <li><strong>Compress</strong>: optionally explore how far the network can be compressed (<code>Part3a_ExploreCompression.m</code>), then apply Taylor pruning and projection, each followed by fine-tuning (<code>Part3_CompressNetwork.m</code>).</li>
   <li><strong>Quantize</strong>: convert the network to 8-bit integers (<code>Part4_QuantizeNetwork.m</code>).</li>
   <li><strong>Generate Code</strong>: prepare camera frames, generate C++ code, and verify it against MATLAB (<code>Part5_GenerateCode.m</code>).</li>
   <li><strong>Deploy and Read Digits</strong>: measure the accuracy on your own handwriting, build the program on the Pi, and run it on the camera (<code>Part6_DeployToRaspberryPi.m</code>).</li>
@@ -364,11 +364,22 @@ imds = imageDatastore(dataFolder,IncludeSubfolders=true,FileExtensions=<span cla
     dropoutLayer(0.2)
     fullyConnectedLayer(10)
     softmaxLayer];</code></pre>
+<p>The helper <code>plotImageNetworkArchitecture</code> draws each layer as a box. The color shows the layer type, the height grows with the number of channels, and the output size of every layer is printed below it.</p>
+<pre class="code"><code>plotImageNetworkArchitecture(dlnetwork(layers),[28 28 1],<span class="s">&quot;Digit-reading CNN on the 28 × 28 image&quot;</span>);</code></pre>
+<figure>
+  <div class="plate"><img src="images/architecture.png" alt="Network architecture with the output size of every layer" loading="lazy"></div>
+  <figcaption>Network architecture with the output size of every layer.</figcaption>
+</figure>
+<p>The first convolution makes 16 feature maps from the 28 × 28 image, each max pooling layer halves the width and height (28 → 14 → 7), and global average pooling collapses the last 7 × 7 × 64 maps into 64 numbers, from which the fully connected layer computes the ten scores.</p>
 <p>A digit that you write on paper and hold in front of a camera is a little rotated, slanted, larger or smaller, and not perfectly centered. Random rotation, shearing, scaling, and shifting of the training images teach the network to cope with this.</p>
 <pre class="code"><code>augmenter = imageDataAugmenter(RandRotation=[-12 12],RandXShear=[-12 12], ...
     RandScale=[0.8 1.2],RandXTranslation=[-3 3],RandYTranslation=[-3 3]);
 dsTrain = augmentedImageDatastore([28 28 1],XTrain,labelsTrain,DataAugmentation=augmenter);
 [net,info] = trainnet(dsTrain,layers,<span class="s">&quot;crossentropy&quot;</span>,options);</code></pre>
+<figure>
+  <div class="plate"><img src="images/augmentation.png" alt="Original training digits and augmented versions" loading="lazy"></div>
+  <figcaption>Top row: original training images. Bottom row: one random augmentation of each (rotation, shear, scaling, and shifting).</figcaption>
+</figure>
 <p>MATLAB opens the <strong>training-progress window</strong> while <code>trainnet</code> runs. On a laptop CPU, the 30 epochs take about a minute.</p>
 <figure>
   <div class="plate"><img src="images/training-progress.png" alt="MATLAB training-progress window with accuracy and loss curves" loading="lazy"></div>
@@ -387,6 +398,10 @@ Accuracy of each digit on the test set (%):
   <div class="plate"><img src="images/confusion.png" alt="Confusion chart on the test set" loading="lazy"></div>
   <figcaption>Test set confusion chart.</figcaption>
 </figure>
+<figure class="narrow">
+  <div class="plate"><img src="images/per-class-accuracy.png" alt="Accuracy of each digit on the test set" loading="lazy"></div>
+  <figcaption>Accuracy of each digit on the test set.</figcaption>
+</figure>
 <p>The test accuracy is high because the test images are written in the same styles as the training images. It is not a promise about your handwriting, your pen, and the camera.</p><p><strong>Grad-CAM</strong> highlights the pixels that raised the score of the predicted class: the network looks at the strokes of the digit.</p>
 <pre class="code"><code>map = gradCAM(net,XTest(:,:,:,idx),predicted(idx));</code></pre>
 <figure>
@@ -397,6 +412,32 @@ Accuracy of each digit on the test set (%):
 <h2 id="step-3"><span class="num">3</span>Compress</h2>
 <p>Two steps make the network smaller: <strong>Taylor pruning</strong> removes the convolution filters that matter least, and <strong>projection</strong> replaces each layer with two smaller layers that keep its principal directions. Each step is followed by fine-tuning with the same augmentation.</p>
 
+<h3>Explore How Far the Network Can Be Compressed (Optional)</h3><p>The optional script <code>Part3a_ExploreCompression.m</code> takes a few minutes and shows how the recipe below was chosen. Deep Network Designer shows a report when you open the network with <code>deepNetworkDesigner(net)</code> and click <strong>Analyze for Compression</strong>; the helper <code>exportCompressionAnalysis</code> shows the same report in a separate window and saves it as an image.</p>
+<pre class="code"><code>exportCompressionAnalysis(net,fullfile(projectFolder,<span class="s">&quot;images&quot;</span>,<span class="s">&quot;compression-analysis.png&quot;</span>))</code></pre>
+<figure>
+  <div class="plate"><img src="images/compression-analysis.png" alt="Analyze for Compression report of the trained network" loading="lazy"></div>
+  <figcaption>Analyze for Compression report of the trained network.</figcaption>
+</figure>
+<p>The report estimates that pruning could remove up to 95.6% of the parameter memory, projection up to 96.6%, and int8 quantization 75.1%. These maximums are <em>structural</em> limits: how far each technique could go if the network structure were the only constraint, regardless of accuracy.</p>
+<figure>
+  <div class="plate"><img src="images/compression-layers.png" alt="Learnable parameters and MACs per layer" loading="lazy"></div>
+  <figcaption>Learnable parameters and multiply-accumulate operations (MACs) per layer.</figcaption>
+</figure>
+<p>The third convolution layer holds about three quarters of the weights, and the second and third layers do nearly all of the computation, so these are the layers where compression pays off. Projection relies on the observation that the activations of a layer often vary along far fewer directions than the layer has neurons. <code>neuronPCA</code> computes the principal components of each layer's activations over the training data: the faster a curve rises to 100%, the more that layer can be projected without losing information.</p>
+<pre class="code"><code>npca = neuronPCA(net,mbqTrain);</code></pre>
+<figure class="narrow">
+  <div class="plate"><img src="images/compression-pca.png" alt="Explained variance of the layer activations" loading="lazy"></div>
+  <figcaption>Explained variance of the layer activations.</figcaption>
+</figure>
+<p><code>conv_1</code> reaches 95% of the variance with about a fifth of its directions and <code>conv_3</code> with about a third, while <code>conv_2</code> needs about half. The script then applies each technique at five strengths and measures the test accuracy twice: directly ("one-shot") and after 8 epochs of fine-tuning.</p>
+<pre class="code"><code>prunableNet = accumulateTaylorScores(net,XTrain,labelsTrain);
+netPruned = dlnetwork(updatePrunables(prunableNet,MaxToPrune=numToPrune));
+netProjected = compressNetworkUsingProjection(net,npca,LearnablesReductionGoal=goal);</code></pre>
+<figure>
+  <div class="plate"><img src="images/compression-sweep.png" alt="Accuracy versus compression strength" loading="lazy"></div>
+  <figcaption>Accuracy versus compression strength. Dashed: one-shot; solid: after fine-tuning. The star marks the recipe applied below.</figcaption>
+</figure>
+<p>Without fine-tuning, both techniques lose almost all of their accuracy: projection falls to 10–16% even when only 11% of the parameters are removed, and pruning keeps 91% at 16% removed and 25% at 62%. With fine-tuning, pruning keeps 98.3% up to 62% removed and 94.7% at 78%. Projection keeps 99.5% up to 32% and 97.9% at 51%, and then collapses (92.5% at 71% and 59.5% at 91%). Projection breaks down earlier because it approximates every layer at once, while pruning removes whole filters but keeps the remaining ones intact.</p><h3>Prune and Project the Network</h3>
 <pre class="code"><code>[netPruned,infoPruned] = compressNetworkUsingTaylorPruning(net,XTrain,labelsTrain,<span class="s">&quot;crossentropy&quot;</span>,optionsPruning, ...
     LearnablesReductionGoal=0.5,LearnablesReductionIncrement=0.05);
 netPruned = trainnet(dsTrain,netPruned,<span class="s">&quot;crossentropy&quot;</span>,optionsFineTune);
@@ -427,6 +468,12 @@ agreement = 98.2       % % of test images where the int8 and float32 networks gi
   <div class="plate"><img src="images/compression.png" alt="Network size, parameter memory, and test accuracy after each step" loading="lazy"></div>
   <figcaption>Size, parameter memory, and test accuracy after each step. The memory falls by 92%.</figcaption>
 </figure>
+<p>Run <code>Part3a_ExploreCompression.m</code> again to place this result in the full design space: every option from the sweep at float32 and at the estimated int8 size, and the path taken through Steps 3 and 4.</p>
+<figure>
+  <div class="plate"><img src="images/compression-design-space.png" alt="Compression design space: test accuracy versus parameter memory" loading="lazy"></div>
+  <figcaption>Compression design space: test accuracy versus parameter memory.</figcaption>
+</figure>
+<p>Moving to the right means a smaller network. The path of this example stays near the top of the chart: the int8 network needs 7.9 KB, the same as the float network that was pruned by 91% in the sweep, but it keeps 97.8% accuracy instead of 84.8%.</p>
 
 <h2 id="step-5"><span class="num">5</span>Generate Code</h2>
 <p>The Raspberry Pi does not run MATLAB. MATLAB Coder translates a MATLAB function, together with the quantized network, into C++ code that the Pi compiles and runs on its own. Code generation starts from one function, <code>digitDetect</code>. It takes a 480 × 640 camera frame, prepares it with <code>preprocessFrame</code>, runs the network, and returns the digit and the ten probabilities. If nothing is written in the middle of the frame, it returns −1: "no digit".</p>

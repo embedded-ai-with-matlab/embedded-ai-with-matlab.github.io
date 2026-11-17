@@ -67,6 +67,7 @@ A small CNN reads a 28 × 28 image of a digit. A function prepares each camera f
 |---|---|---|
 | 1 | `Part1_PrepareData.m` | Load the digit images and split them |
 | 2 | `Part2_TrainNetwork.m` | Train the CNN with augmentation, test it, and look at it with Grad-CAM |
+| 3 | `Part3a_ExploreCompression.m` | Optional: analyze the network for compression, and measure the accuracy of pruning and projection at increasing strength |
 | 3 | `Part3_CompressNetwork.m` | Prune and project the network, with fine-tuning |
 | 4 | `Part4_QuantizeNetwork.m` | Quantize the network to int8 |
 | 5 | `Part5_GenerateCode.m` | Prepare camera frames, generate C++ code, and verify it against MATLAB |
@@ -122,6 +123,16 @@ layers = [
     softmaxLayer];
 ```
 
+The helper `plotImageNetworkArchitecture` draws each layer as a box. The color shows the layer type, the height grows with the number of channels, and the output size of every layer is printed below it.
+
+```{.matlab}
+plotImageNetworkArchitecture(dlnetwork(layers),[28 28 1],"Digit-reading CNN on the 28 × 28 image");
+```
+
+![Network architecture with the output size of every layer.](../matlab/projects/digit-recognition-on-raspberry-pi/images/architecture.png){#fig-lab3-arch width=100%}
+
+The first convolution makes 16 feature maps from the 28 × 28 image, each max pooling layer halves the width and height (28 → 14 → 7), and global average pooling collapses the last 7 × 7 × 64 maps into 64 numbers, from which the fully connected layer computes the ten scores.
+
 A digit that you write on paper and hold in front of a camera is a little rotated, slanted, larger or smaller, and not perfectly centered. Random rotation, shearing, scaling, and shifting of the training images teach the network to cope with this.
 
 ```{.matlab}
@@ -130,6 +141,8 @@ augmenter = imageDataAugmenter(RandRotation=[-12 12],RandXShear=[-12 12], ...
 dsTrain = augmentedImageDatastore([28 28 1],XTrain,labelsTrain,DataAugmentation=augmenter);
 [net,info] = trainnet(dsTrain,layers,"crossentropy",options);
 ```
+
+![Top row: original training images. Bottom row: one random augmentation of each (rotation, shear, scaling, and shifting).](../matlab/projects/digit-recognition-on-raspberry-pi/images/augmentation.png){#fig-lab3-aug width=90%}
 
 MATLAB opens the **training-progress window** while `trainnet` runs. On a laptop CPU, the 30 epochs take about a minute.
 
@@ -145,6 +158,8 @@ accuracyTest = 98.9333
 
 ![Test set confusion chart.](../matlab/projects/digit-recognition-on-raspberry-pi/images/confusion.png){#fig-lab3-confusion width=55%}
 
+![Accuracy of each digit on the test set.](../matlab/projects/digit-recognition-on-raspberry-pi/images/per-class-accuracy.png){#fig-lab3-perclass width=65%}
+
 Every digit is recognized in at least 96.7% of the test images. This number is high because the test images are written in the same styles as the training images. It is not a promise about your handwriting, your pen, and the camera.
 
 **Grad-CAM** highlights the pixels that raised the score of the predicted class: the network looks at the strokes of the digit.
@@ -152,6 +167,54 @@ Every digit is recognized in at least 96.7% of the test images. This number is h
 ![Grad-CAM for one test digit of each class. The maps are coarse, because the images are only 28 × 28 pixels.](../matlab/projects/digit-recognition-on-raspberry-pi/images/gradcam.png){#fig-lab3-gradcam width=100%}
 
 ## Step 3 — Compress the network
+
+### Explore how far the network can be compressed (optional)
+
+Run `Part3a_ExploreCompression.m`. It takes a few minutes, and it shows how the recipe of this step was chosen.
+
+#### Analyze the network
+
+Deep Network Designer shows a report when you open the network with `deepNetworkDesigner(net)` and click **Analyze for Compression**. The helper `exportCompressionAnalysis` shows the same report in a separate window and saves it as an image.
+
+```{.matlab}
+exportCompressionAnalysis(net,fullfile(projectFolder,"images","compression-analysis.png"))
+```
+
+![Analyze for Compression report of the trained network.](../matlab/projects/digit-recognition-on-raspberry-pi/images/compression-analysis.png){#fig-lab3-report width=100%}
+
+The report estimates that pruning could remove up to 95.6% of the parameter memory, projection up to 96.6%, and int8 quantization 75.1%. These maximums are *structural* limits: how far each technique could go if the network structure were the only constraint, regardless of accuracy.
+
+![Learnable parameters and multiply-accumulate operations (MACs) per layer.](../matlab/projects/digit-recognition-on-raspberry-pi/images/compression-layers.png){#fig-lab3-layers width=85%}
+
+The third convolution layer holds about three quarters of the weights, and the second and third layers do nearly all of the computation, so these are the layers where compression pays off.
+
+#### See how many directions each layer uses
+
+Projection relies on the observation that the activations of a layer often vary along far fewer directions than the layer has neurons. `neuronPCA` computes the principal components of each layer's activations over the training data. The faster a curve rises to 100%, the more that layer can be projected without losing information.
+
+```{.matlab}
+npca = neuronPCA(net,mbqTrain);
+```
+
+![Explained variance of the layer activations.](../matlab/projects/digit-recognition-on-raspberry-pi/images/compression-pca.png){#fig-lab3-pca width=75%}
+
+`conv_1` reaches 95% of the variance with about a fifth of its directions and `conv_3` with about a third, while `conv_2` needs about half. The network has more capacity than reading ten digits requires.
+
+#### Measure the accuracy cost of compression
+
+The script applies each technique at five strengths and measures the test accuracy twice: directly ("one-shot") and after 8 epochs of fine-tuning.
+
+```{.matlab}
+prunableNet = accumulateTaylorScores(net,XTrain,labelsTrain);
+netPruned = dlnetwork(updatePrunables(prunableNet,MaxToPrune=numToPrune));
+netProjected = compressNetworkUsingProjection(net,npca,LearnablesReductionGoal=goal);
+```
+
+![Accuracy versus compression strength. Dashed: one-shot; solid: after fine-tuning. The star marks the recipe applied below.](../matlab/projects/digit-recognition-on-raspberry-pi/images/compression-sweep.png){#fig-lab3-sweep width=85%}
+
+Without fine-tuning, both techniques lose almost all of their accuracy: projection falls to 10–16% even when only 11% of the parameters are removed, and pruning keeps 91% at 16% removed and 25% at 62%. With fine-tuning, pruning keeps 98.3% up to 62% removed and 94.7% at 78%. Projection keeps 99.5% up to 32% and 97.9% at 51%, and then collapses (92.5% at 71% and 59.5% at 91%). Projection breaks down earlier because it approximates every layer at once, while pruning removes whole filters but keeps the remaining ones intact.
+
+### Prune and project the network
 
 Run `Part3_CompressNetwork.m`. **Taylor pruning** removes the convolution filters that matter least, and **projection** replaces each layer with two smaller layers that keep its principal directions. Each step is followed by fine-tuning with the same augmentation.
 
@@ -195,6 +258,12 @@ netQ = quantize(quantObj,ExponentScheme="histogram");
 The int8 network gives the same answer as the float network for 98.2% of the test images.
 
 ![Network size, parameter memory, and test accuracy after each step.](../matlab/projects/digit-recognition-on-raspberry-pi/images/compression.png){#fig-lab3-compression width=100%}
+
+Run `Part3a_ExploreCompression.m` again to place this result in the full design space: every option from the sweep at float32 and at the estimated int8 size, and the path taken through Steps 3 and 4.
+
+![Compression design space: test accuracy versus parameter memory.](../matlab/projects/digit-recognition-on-raspberry-pi/images/compression-design-space.png){#fig-lab3-design-space width=85%}
+
+Moving to the right means a smaller network. The path of this lab stays near the top of the chart: the int8 network needs 7.9 KB, the same as the float network that was pruned by 91% in the sweep, but it keeps 97.8% accuracy instead of 84.8%.
 
 ## Step 5 — Generate C++ code
 

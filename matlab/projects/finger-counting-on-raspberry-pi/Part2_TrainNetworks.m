@@ -37,8 +37,8 @@ layers = [
     dropoutLayer(0.3)
     fullyConnectedLayer(6)
     softmaxLayer];
-plot(dlnetwork(layers))
-title("Finger-counting CNN")
+plotImageNetworkArchitecture(dlnetwork(layers),[96 96 3],"Finger-counting CNN on the 96 × 96 color image");
+%[text] The helper `plotImageNetworkArchitecture` draws each layer as a box. The color shows the layer type, the height grows with the number of channels, and the output size of every layer is printed below it. Each max pooling layer halves the width and height (96 → 48 → 24 → 12), and global average pooling collapses the last 12 × 12 × 128 maps into 128 numbers.
 %%
 %[text] ## Augment the Training Images
 %[text] A photo of a hand in a new room will differ from the training photos: the hand is a little rotated, closer, or off-center. Random rotation, scaling, and shifting of the training images teach the network to cope with this. (Mirroring is left out: it did not help in our tests.) The validation and test images are not augmented.
@@ -80,6 +80,10 @@ confusionchart(labelsTest,predicted,Title="Test set (groups never seen in traini
 %[text] The test set has far more fists than other classes, so also look at the accuracy of each class separately. **Treat these numbers with care.** The test set has only 247 hands from two recording groups, and the same network trained with another random seed can score anywhere between 40% and 70% on it: a small dataset gives an unstable estimate. Part 6 tests the model on the Pi's own camera, which is the number that matters.
 recallPerClass = array2table(100*diag(confusionmat(labelsTest,predicted))'./countcats(labelsTest)',VariableNames="fingers_" + classNames)
 accuracyVal = testnet(net,XVal,labelsVal,"accuracy")
+figure
+bar(categorical(classNames,classNames),table2array(recallPerClass))
+ylim([0 105]), xlabel("Number of fingers"), ylabel("Test accuracy of the class (%)")
+title("Accuracy of each class on the test set")
 %%
 %[text] ## See What the Network Looks At
 %[text] **Grad-CAM** highlights the pixels that raised the score of the predicted class. If the network has learned to count fingers, the bright areas should lie on the fingers, not on the face or the wall.

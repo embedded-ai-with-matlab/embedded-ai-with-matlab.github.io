@@ -31,9 +31,8 @@ layers = [
     dropoutLayer(0.2)
     fullyConnectedLayer(10)
     softmaxLayer];
-figure
-plot(dlnetwork(layers))
-title("Digit-recognition CNN")
+plotImageNetworkArchitecture(dlnetwork(layers),[28 28 1],"Digit-reading CNN on the 28 × 28 image");
+%[text] The helper `plotImageNetworkArchitecture` draws each layer as a box. The color shows the layer type, the height grows with the number of channels, and the output size of every layer is printed below it. The first convolution makes 16 feature maps from the 28 × 28 image, each max pooling layer halves the width and height, and global average pooling collapses the last 7 × 7 × 64 maps into 64 numbers.
 %%
 %[text] ## Augment the Training Images
 %[text] A digit that you write on paper and hold in front of a camera is a little rotated, slanted, larger or smaller, and not perfectly centered. Random rotation, shearing, scaling, and shifting of the training images teach the network to cope with this. The validation and test images are not augmented.
@@ -75,6 +74,10 @@ figure
 confusionchart(labelsTest,predicted,Title="Test set")
 recallPerClass = array2table(100*diag(confusionmat(labelsTest,predicted))'./countcats(labelsTest)',VariableNames="digit_" + classNames)
 accuracyVal = testnet(net,XVal,labelsVal,"accuracy")
+figure
+bar(categorical(classNames,classNames),table2array(recallPerClass))
+ylim([90 100.5]), xlabel("Digit"), ylabel("Test accuracy of the digit (%)")
+title("Accuracy of each digit on the test set")
 %[text] The test accuracy is high because the test images are written in the same styles as the training images. It is not a promise about your handwriting, your pen, and the camera: Part 6 measures that.
 %%
 %[text] ## See What the Network Looks At

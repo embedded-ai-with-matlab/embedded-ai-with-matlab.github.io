@@ -69,6 +69,7 @@ A small CNN reads a 96 × 96 color image of a hand and predicts one of six class
 |---|---|---|
 | 1 | `Part1_PrepareData.m` | Download the dataset, cut out the hands, and split by recording group |
 | 2 | `Part2_TrainNetworks.m` | Train the CNN with augmentation, test it, and look at it with Grad-CAM |
+| 3 | `Part3a_ExploreCompression.m` | Optional: analyze the network for compression, and measure the accuracy of pruning and projection at increasing strength |
 | 3 | `Part3_CompressClassifier.m` | Prune and project the network, with fine-tuning |
 | 4 | `Part4_QuantizeNetwork.m` | Quantize the network to int8 |
 | 5 | `Part5_GenerateCode.m` | Generate C++ code and verify it against MATLAB |
@@ -121,6 +122,8 @@ Validation       97           23           25           30           34         
 Test             92           25           24           42           34           30
 ```
 
+![Hands per class and set.](../matlab/projects/finger-counting-on-raspberry-pi/images/class-split.png){#fig-lab2-split width=70%}
+
 Every set contains all six classes: 1,256 hands for training, 227 for validation, and 247 for testing. The validation and test sets are small, and they contain many more fists than other hands. All hands of the `other` group are 5-finger hands, a shortcut that a network could learn ("this photo style means 5").
 
 ## Step 2 — Train the network
@@ -151,6 +154,16 @@ layers = [
     softmaxLayer];
 ```
 
+The helper `plotImageNetworkArchitecture` draws each layer as a box. The color shows the layer type, the height grows with the number of channels, and the output size of every layer is printed below it.
+
+```{.matlab}
+plotImageNetworkArchitecture(dlnetwork(layers),[96 96 3],"Finger-counting CNN on the 96 × 96 color image");
+```
+
+![Network architecture with the output size of every layer.](../matlab/projects/finger-counting-on-raspberry-pi/images/architecture.png){#fig-lab2-arch width=100%}
+
+Each max pooling layer halves the width and height (96 → 48 → 24 → 12), and global average pooling collapses the last 12 × 12 × 128 maps into 128 numbers, from which the fully connected layer computes the six scores.
+
 A hand in a new room differs from the training photos: it is a little rotated, closer, or off-center. Random rotation, scaling, and shifting of the training images teach the network to cope with this. Mirroring is left out, because it did not help in our tests.
 
 ```{.matlab}
@@ -159,6 +172,8 @@ augmenter = imageDataAugmenter(RandRotation=[-15 15],RandScale=[0.9 1.1], ...
 dsTrain = augmentedImageDatastore([96 96 3],XTrain,labelsTrain,DataAugmentation=augmenter);
 [net,info] = trainnet(dsTrain,layers,"crossentropy",options);
 ```
+
+![Top row: original hand crops. Bottom row: one random augmentation of each (rotation, scaling, and shifting).](../matlab/projects/finger-counting-on-raspberry-pi/images/augmentation.png){#fig-lab2-aug width=90%}
 
 MATLAB opens the **training-progress window** while `trainnet` runs. On a laptop CPU, the 80 epochs take a few minutes.
 
@@ -176,6 +191,8 @@ accuracyTest = 58.7045
 
 ![Test set confusion chart. Hands with 1 and 3 fingers are often mistaken for 2.](../matlab/projects/finger-counting-on-raspberry-pi/images/confusion.png){#fig-lab2-confusion width=60%}
 
+![Accuracy of each class on the test set.](../matlab/projects/finger-counting-on-raspberry-pi/images/per-class-accuracy.png){#fig-lab2-perclass width=60%}
+
 The test accuracy is 58.7%, with very uneven results for each class (81.5%, 12.0%, 87.5%, 11.9%, 61.8%, and 66.7% for 0 to 5 fingers). The test set has only 247 hands from two recording groups, and the same network trained with another seed scored anywhere between about 40% and 70%. A small dataset gives an unstable estimate.
 
 ### See what the network looks at
@@ -190,7 +207,55 @@ map = gradCAM(net,XTest(:,:,:,idx),predicted(idx));
 
 ## Step 3 — Compress the network
 
-A Raspberry Pi 5 has plenty of memory, but a smaller network still loads faster, uses less memory bandwidth, and runs faster. Run `Part3_CompressClassifier.m`. **Taylor pruning** removes the convolution filters that matter least, and **projection** replaces each layer with two smaller layers that keep its principal directions. Each step is followed by fine-tuning with the same augmentation as in Step 2.
+A Raspberry Pi 5 has plenty of memory, but a smaller network still loads faster, uses less memory bandwidth, and runs faster. ### Explore how far the network can be compressed (optional)
+
+Run `Part3a_ExploreCompression.m`. It takes several minutes, and it shows how the recipe of this step was chosen.
+
+#### Analyze the network
+
+Deep Network Designer shows a report when you open the network with `deepNetworkDesigner(net)` and click **Analyze for Compression**. The helper `exportCompressionAnalysis` shows the same report in a separate window and saves it as an image.
+
+```{.matlab}
+exportCompressionAnalysis(net,fullfile(projectFolder,"images","compression-analysis.png"))
+```
+
+![Analyze for Compression report of the trained network.](../matlab/projects/finger-counting-on-raspberry-pi/images/compression-analysis.png){#fig-lab2-report width=100%}
+
+The report estimates that pruning could remove up to 96% of the parameter memory, projection up to 99%, and int8 quantization 75%. These maximums are *structural* limits: how far each technique could go if the network structure were the only constraint, regardless of accuracy.
+
+![Learnable parameters and multiply-accumulate operations (MACs) per layer.](../matlab/projects/finger-counting-on-raspberry-pi/images/compression-layers.png){#fig-lab2-layers width=85%}
+
+The last two convolution layers hold more than 90% of the weights, and the middle layers do most of the computation, so these are the layers where compression pays off.
+
+#### See how many directions each layer uses
+
+Projection relies on the observation that the activations of a layer often vary along far fewer directions than the layer has neurons. `neuronPCA` computes the principal components of each layer's activations over the training data. The faster a curve rises to 100%, the more that layer can be projected without losing information.
+
+```{.matlab}
+npca = neuronPCA(net,mbqTrain);
+```
+
+![Explained variance of the layer activations.](../matlab/projects/finger-counting-on-raspberry-pi/images/compression-pca.png){#fig-lab2-pca width=75%}
+
+In every layer, 95% of the variance lies in only 10–15% of the directions. The network is highly redundant, which is why strong compression is possible.
+
+#### Measure the accuracy cost of compression
+
+The script applies each technique at five strengths and measures the test accuracy twice: directly ("one-shot") and after 8 epochs of fine-tuning.
+
+```{.matlab}
+prunableNet = accumulateTaylorScores(net,XTrain,labelsTrain);
+netPruned = dlnetwork(updatePrunables(prunableNet,MaxToPrune=numToPrune));
+netProjected = compressNetworkUsingProjection(net,npca,LearnablesReductionGoal=goal);
+```
+
+![Accuracy versus compression strength. Dashed: one-shot; solid: after fine-tuning. The star marks the recipe applied below.](../matlab/projects/finger-counting-on-raspberry-pi/images/compression-sweep.png){#fig-lab2-sweep width=85%}
+
+Without fine-tuning, the accuracy falls quickly: pruning drops to 27% after removing only 17% of the parameters and to about 10% from 67% on, and projection keeps 58% at 10% and 56% at 31% (the original network scores 58.7%) before it falls to 16% at 51%. After fine-tuning, the accuracy of every setting scatters between about 50% and 71% with no clear trend. Only the strongest projection (90% removed) is clearly worse, at 49.8%. This is the same instability as in Step 2: the test set has only 247 hands, so it cannot tell the settings apart. The one-shot curves, which involve no training, show the real trend.
+
+### Prune and project the network
+
+Run `Part3_CompressClassifier.m`. **Taylor pruning** removes the convolution filters that matter least, and **projection** replaces each layer with two smaller layers that keep its principal directions. Each step is followed by fine-tuning with the same augmentation as in Step 2.
 
 ```{.matlab}
 [netPruned,infoPruned] = compressNetworkUsingTaylorPruning(net,XTrain,labelsTrain,"crossentropy",optionsPruning, ...
@@ -232,6 +297,12 @@ netQ = quantize(quantObj,ExponentScheme="histogram");
 The int8 network gives the same answer as the float network for 91.9% of the test hands.
 
 ![Network size, parameter memory, and test accuracy after each step.](../matlab/projects/finger-counting-on-raspberry-pi/images/compression.png){#fig-lab2-compression width=100%}
+
+Run `Part3a_ExploreCompression.m` again to place this result in the full design space: every option from the sweep at float32 and at the estimated int8 size, and the path taken through Steps 3 and 4.
+
+![Compression design space: test accuracy versus parameter memory.](../matlab/projects/finger-counting-on-raspberry-pi/images/compression-design-space.png){#fig-lab2-design-space width=85%}
+
+Moving to the right means a smaller network. Because the test accuracy is noisy, the height of the points is not reliable, but the horizontal axis is: the path of this lab goes from 944 KB to 58 KB of parameter memory.
 
 ## Step 5 — Generate C++ code
 

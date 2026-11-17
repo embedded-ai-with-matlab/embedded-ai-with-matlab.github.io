@@ -89,6 +89,10 @@ splitCounts = table(["Training";"Validation";"Test"],[sum(isTrain);sum(isVal);su
     VariableNames=["Set" "Hands"])
 classCounts = array2table([countcats(labels(isTrain))';countcats(labels(isVal))';countcats(labels(isTest))'], ...
     RowNames=["Training" "Validation" "Test"],VariableNames="fingers_" + classNames)
+figure
+bar(categorical(classNames,classNames),table2array(classCounts)')
+legend(["Training" "Validation" "Test"]), xlabel("Number of fingers"), ylabel("Hands")
+title("Hands per class and set")
 %[text] Every set contains all six classes. The `other` group is a shortcut to watch for: all of it is "5 fingers", so a network could learn "this photo style means 5". The validation and test sets contain no `other` photos, so a low accuracy for 5 fingers there would show it.
 XTrain = X(:,:,:,isTrain); labelsTrain = labels(isTrain);
 XVal = X(:,:,:,isVal); labelsVal = labels(isVal);

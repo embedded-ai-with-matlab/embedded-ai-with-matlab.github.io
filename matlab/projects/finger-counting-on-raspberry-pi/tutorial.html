@@ -316,7 +316,7 @@ td:has(> .led) { white-space: nowrap; }
 <ol class="steps">
   <li><strong>Prepare Data</strong>: download the Hands Dataset, cut out the hands, and split by recording group (<code>Part1_PrepareData.m</code>).</li>
   <li><strong>Train the Network</strong>: train a small CNN with image augmentation, test it, and look at it with Grad-CAM (<code>Part2_TrainNetworks.m</code>).</li>
-  <li><strong>Compress</strong>: Taylor pruning and projection, each followed by fine-tuning (<code>Part3_CompressClassifier.m</code>).</li>
+  <li><strong>Compress</strong>: optionally explore how far the network can be compressed (<code>Part3a_ExploreCompression.m</code>), then apply Taylor pruning and projection, each followed by fine-tuning (<code>Part3_CompressClassifier.m</code>).</li>
   <li><strong>Quantize</strong>: convert the network to 8-bit integers (<code>Part4_QuantizeNetwork.m</code>).</li>
   <li><strong>Generate Code</strong>: generate C++ code and verify it against MATLAB (<code>Part5_GenerateCode.m</code>).</li>
   <li><strong>Deploy and Run</strong>: build the program on the Pi and run it on the camera (<code>Part6_DeployToRaspberryPi.m</code>).</li>
@@ -375,6 +375,10 @@ isTrain = ~isTest &amp; ~isVal;</code></pre>
 Training        314          184          172          153          142          291
 Validation       97           23           25           30           34           18
 Test             92           25           24           42           34           30</pre>
+<figure class="narrow">
+  <div class="plate"><img src="images/class-split.png" alt="Hands per class and set" loading="lazy"></div>
+  <figcaption>Hands per class and set.</figcaption>
+</figure>
 <p>Every set contains all six classes: 1,256 hands for training, 227 for validation, and 247 for testing. Two things to keep in mind. The validation and test sets are small, and they contain many more fists than other hands, so the accuracy per class will be shaky. And all hands in the <code>other</code> group are 5-finger hands, a shortcut a network could learn: "this photo style means 5".</p>
 
 <h2 id="step-2"><span class="num">2</span>Train the Network</h2>
@@ -403,6 +407,13 @@ Test             92           25           24           42           34         
     dropoutLayer(0.3)
     fullyConnectedLayer(6)
     softmaxLayer];</code></pre>
+<p>The helper <code>plotImageNetworkArchitecture</code> draws each layer as a box. The color shows the layer type, the height grows with the number of channels, and the output size of every layer is printed below it.</p>
+<pre class="code"><code>plotImageNetworkArchitecture(dlnetwork(layers),[96 96 3],<span class="s">&quot;Finger-counting CNN on the 96 × 96 color image&quot;</span>);</code></pre>
+<figure>
+  <div class="plate"><img src="images/architecture.png" alt="Network architecture with the output size of every layer" loading="lazy"></div>
+  <figcaption>Network architecture with the output size of every layer.</figcaption>
+</figure>
+<p>Each max pooling layer halves the width and height (96 → 48 → 24 → 12), and global average pooling collapses the last 12 × 12 × 128 maps into 128 numbers, from which the fully connected layer computes the six scores.</p>
 
 <h3>Augment and Train</h3>
 <p>A photo of a hand in a new room differs from the training photos: the hand is a little rotated, closer, or off-center. Random rotation, scaling, and shifting of the training images teach the network to cope with this. Mirroring is left out, because it did not help in our tests.</p>
@@ -414,6 +425,10 @@ options = trainingOptions(<span class="s">&quot;adam&quot;</span>,MaxEpochs=80,M
     ValidationData={XVal,labelsVal},ValidationFrequency=20,Metrics=<span class="s">&quot;accuracy&quot;</span>, ...
     Shuffle=<span class="s">&quot;every-epoch&quot;</span>,OutputNetwork=<span class="s">&quot;best-validation&quot;</span>,Plots=<span class="s">&quot;training-progress&quot;</span>);
 [net,info] = trainnet(dsTrain,layers,<span class="s">&quot;crossentropy&quot;</span>,options);</code></pre>
+<figure>
+  <div class="plate"><img src="images/augmentation.png" alt="Original hand crops and augmented versions" loading="lazy"></div>
+  <figcaption>Top row: original hand crops. Bottom row: one random augmentation of each (rotation, scaling, and shifting).</figcaption>
+</figure>
 <p>MATLAB opens the <strong>training-progress window</strong> while <code>trainnet</code> runs. On a laptop CPU, the 80 epochs take a few minutes.</p>
 <figure>
   <div class="plate"><img src="images/training-progress.png" alt="MATLAB training-progress window with accuracy and loss curves" loading="lazy"></div>
@@ -437,6 +452,10 @@ fingers_0   fingers_1   fingers_2   fingers_3   fingers_4   fingers_5
   <div class="plate"><img src="images/confusion.png" alt="Confusion chart on the test set" loading="lazy"></div>
   <figcaption>Test set confusion chart (the saved network of the reference run). Hands with 1 and 3 fingers are often mistaken for 2.</figcaption>
 </figure>
+<figure class="narrow">
+  <div class="plate"><img src="images/per-class-accuracy.png" alt="Accuracy of each class on the test set" loading="lazy"></div>
+  <figcaption>Accuracy of each class on the test set.</figcaption>
+</figure>
 <p>The test accuracy is 58.7%, with a very uneven result for each class. The test set has only 247 hands from two recording groups, and the same network trained with another random seed scored anywhere between about 40% and 70%. A small dataset gives an unstable estimate. Part 6 tests the model on the Pi's own camera, which matters more.</p>
 
 <h3>See What the Network Looks At</h3>
@@ -451,6 +470,32 @@ fingers_0   fingers_1   fingers_2   fingers_3   fingers_4   fingers_5
 <h2 id="step-3"><span class="num">3</span>Compress</h2>
 <p>A Raspberry Pi 5 has plenty of memory, but a smaller network still loads faster, uses less memory bandwidth, and runs faster. Two steps make the network smaller: <strong>Taylor pruning</strong> removes the convolution filters that matter least, and <strong>projection</strong> replaces each layer with two smaller layers that keep its principal directions. Each step is followed by fine-tuning.</p>
 
+<h3>Explore How Far the Network Can Be Compressed (Optional)</h3><p>The optional script <code>Part3a_ExploreCompression.m</code> takes several minutes and shows how the recipe below was chosen. Deep Network Designer shows a report when you open the network with <code>deepNetworkDesigner(net)</code> and click <strong>Analyze for Compression</strong>; the helper <code>exportCompressionAnalysis</code> shows the same report in a separate window and saves it as an image.</p>
+<pre class="code"><code>exportCompressionAnalysis(net,fullfile(projectFolder,<span class="s">&quot;images&quot;</span>,<span class="s">&quot;compression-analysis.png&quot;</span>))</code></pre>
+<figure>
+  <div class="plate"><img src="images/compression-analysis.png" alt="Analyze for Compression report of the trained network" loading="lazy"></div>
+  <figcaption>Analyze for Compression report of the trained network.</figcaption>
+</figure>
+<p>The report estimates that pruning could remove up to 96% of the parameter memory, projection up to 99%, and int8 quantization 75%. These maximums are <em>structural</em> limits: how far each technique could go if the network structure were the only constraint, regardless of accuracy.</p>
+<figure>
+  <div class="plate"><img src="images/compression-layers.png" alt="Learnable parameters and MACs per layer" loading="lazy"></div>
+  <figcaption>Learnable parameters and multiply-accumulate operations (MACs) per layer.</figcaption>
+</figure>
+<p>The last two convolution layers hold more than 90% of the weights, and the middle layers do most of the computation, so these are the layers where compression pays off. Projection relies on the observation that the activations of a layer often vary along far fewer directions than the layer has neurons. <code>neuronPCA</code> computes the principal components of each layer's activations over the training data: the faster a curve rises to 100%, the more that layer can be projected without losing information.</p>
+<pre class="code"><code>npca = neuronPCA(net,mbqTrain);</code></pre>
+<figure class="narrow">
+  <div class="plate"><img src="images/compression-pca.png" alt="Explained variance of the layer activations" loading="lazy"></div>
+  <figcaption>Explained variance of the layer activations.</figcaption>
+</figure>
+<p>In every layer, 95% of the variance lies in only 10–15% of the directions: the network is highly redundant, which is why strong compression is possible. The script then applies each technique at five strengths and measures the test accuracy twice: directly ("one-shot") and after 8 epochs of fine-tuning.</p>
+<pre class="code"><code>prunableNet = accumulateTaylorScores(net,XTrain,labelsTrain);
+netPruned = dlnetwork(updatePrunables(prunableNet,MaxToPrune=numToPrune));
+netProjected = compressNetworkUsingProjection(net,npca,LearnablesReductionGoal=goal);</code></pre>
+<figure>
+  <div class="plate"><img src="images/compression-sweep.png" alt="Accuracy versus compression strength" loading="lazy"></div>
+  <figcaption>Accuracy versus compression strength. Dashed: one-shot; solid: after fine-tuning. The star marks the recipe applied below.</figcaption>
+</figure>
+<p>Without fine-tuning, the accuracy falls quickly: pruning drops to 27% after removing only 17% of the parameters and to about 10% from 67% on, and projection keeps 58% at 10% and 56% at 31% (the original network scores 58.7%) before it falls to 16% at 51%. After fine-tuning, the accuracy of every setting scatters between about 50% and 71% with no clear trend, and only the strongest projection (90% removed) is clearly worse, at 49.8%. This is the same instability as in Step 2: the test set has only 247 hands, so it cannot tell the settings apart. The one-shot curves, which involve no training, show the real trend.</p><h3>Prune and Project the Network</h3>
 <pre class="code"><code>[netPruned,infoPruned] = compressNetworkUsingTaylorPruning(net,XTrain,labelsTrain,<span class="s">&quot;crossentropy&quot;</span>,optionsPruning, ...
     LearnablesReductionGoal=0.5,LearnablesReductionIncrement=0.05);
 netPruned = trainnet(dsTrain,netPruned,<span class="s">&quot;crossentropy&quot;</span>,optionsFineTune);
@@ -484,6 +529,12 @@ agreement = 91.9028      % % of test hands where the int8 and float32 networks g
   <div class="plate"><img src="images/compression.png" alt="Network size, parameter memory, and test accuracy after each step" loading="lazy"></div>
   <figcaption>Size, parameter memory, and test accuracy after each step. The memory falls by 94%.</figcaption>
 </figure>
+<p>Run <code>Part3a_ExploreCompression.m</code> again to place this result in the full design space: every option from the sweep at float32 and at the estimated int8 size, and the path taken through Steps 3 and 4.</p>
+<figure>
+  <div class="plate"><img src="images/compression-design-space.png" alt="Compression design space: test accuracy versus parameter memory" loading="lazy"></div>
+  <figcaption>Compression design space: test accuracy versus parameter memory.</figcaption>
+</figure>
+<p>Moving to the right means a smaller network. Because the test accuracy is noisy, the height of the points is not reliable, but the horizontal axis is: the path of this example goes from 944 KB to 58 KB of parameter memory.</p>
 
 <h2 id="step-5"><span class="num">5</span>Generate Code</h2>
 <p>The Raspberry Pi does not run MATLAB. MATLAB Coder translates a MATLAB function, together with the quantized network, into C++ code that the Pi compiles and runs on its own. Code generation starts from one function, <code>fingerCountDetect</code>. It takes a 480 × 640 camera frame, prepares it with <code>preprocessFrame</code> (the same function that prepared the training images), runs the network, and returns the number of fingers and the six probabilities.</p>
